@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { Loader2, Mail, Lock, User, AlertCircle, Check, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import logo from '@/assets/nutrinani-logo.png';
+
+interface PasswordRequirement {
+  label: string;
+  test: (password: string) => boolean;
+  met: boolean;
+}
 
 export function AuthPage() {
   const { login, register, loginWithGoogle, isDemoMode } = useAuth();
@@ -23,6 +29,40 @@ export function AuthPage() {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupName, setSignupName] = useState('');
+  const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
+
+  // Password validation requirements
+  const passwordRequirements = useMemo((): PasswordRequirement[] => [
+    {
+      label: 'At least 8 characters',
+      test: (pwd) => pwd.length >= 8,
+      met: signupPassword.length >= 8,
+    },
+    {
+      label: 'Contains at least 1 number',
+      test: (pwd) => /\d/.test(pwd),
+      met: /\d/.test(signupPassword),
+    },
+    {
+      label: 'Contains at least 1 special character',
+      test: (pwd) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pwd),
+      met: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(signupPassword),
+    },
+    {
+      label: 'Contains at least 1 uppercase letter',
+      test: (pwd) => /[A-Z]/.test(pwd),
+      met: /[A-Z]/.test(signupPassword),
+    },
+    {
+      label: 'Contains at least 1 lowercase letter',
+      test: (pwd) => /[a-z]/.test(pwd),
+      met: /[a-z]/.test(signupPassword),
+    },
+  ], [signupPassword]);
+
+  const isPasswordValid = useMemo(() => {
+    return passwordRequirements.every(req => req.met);
+  }, [passwordRequirements]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +81,13 @@ export function AuthPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Validate password requirements
+    if (!isPasswordValid && !isDemoMode) {
+      setError('Please meet all password requirements');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -253,12 +300,36 @@ export function AuthPage() {
                         className="pl-10"
                         value={signupPassword}
                         onChange={(e) => setSignupPassword(e.target.value)}
+                        onFocus={() => setShowPasswordRequirements(true)}
                         required
-                        minLength={6}
                         disabled={isLoading}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
+                    
+                    {/* Password Requirements */}
+                    {!isDemoMode && (showPasswordRequirements || signupPassword.length > 0) && (
+                      <div className="mt-3 p-3 bg-muted rounded-lg space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground mb-2">
+                          Password Requirements:
+                        </p>
+                        {passwordRequirements.map((req, index) => (
+                          <div key={index} className="flex items-center gap-2 text-xs">
+                            {req.met ? (
+                              <Check className="h-3.5 w-3.5 text-green-600 flex-shrink-0" />
+                            ) : (
+                              <X className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                            )}
+                            <span className={req.met ? 'text-green-600' : 'text-muted-foreground'}>
+                              {req.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {isDemoMode && (
+                      <p className="text-xs text-muted-foreground">Any password works in demo mode</p>
+                    )}
                   </div>
 
                   {error && (
@@ -268,7 +339,11 @@ export function AuthPage() {
                     </Alert>
                   )}
 
-                  <Button type="submit" className="w-full" disabled={isLoading}>
+                  <Button 
+                    type="submit" 
+                    className="w-full" 
+                    disabled={isLoading || (!isDemoMode && !isPasswordValid)}
+                  >
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />

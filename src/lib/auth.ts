@@ -7,7 +7,7 @@ import {
   fetchAuthSession,
   signInWithRedirect,
 } from 'aws-amplify/auth';
-import { isAmplifyConfigured } from './amplify';
+import { isAmplifyConfigured, isGoogleAuthConfigured } from './amplify';
 
 // Demo mode when Amplify is not configured
 export const isDemoAuth = !isAmplifyConfigured;
@@ -35,16 +35,43 @@ export async function signUp(email: string, password: string, name?: string): Pr
     return;
   }
 
-  await amplifySignUp({
-    username: email,
-    password,
-    options: {
-      userAttributes: {
-        email,
-        name: name || '',
+  try {
+    await amplifySignUp({
+      username: email,
+      password,
+      options: {
+        userAttributes: {
+          email,
+          name: name || '',
+        },
       },
-    },
-  });
+    });
+  } catch (error: any) {
+    // Check for the specific client secret error
+    if (error.message?.includes('SECRET_HASH')) {
+      throw new Error(
+        'Authentication configuration error: Your Cognito app client has a secret, but frontend apps cannot use secrets. ' +
+        'Please create a new app client WITHOUT a client secret in AWS Cognito Console. ' +
+        'See FIX_CLIENT_SECRET_ERROR.md for detailed instructions.'
+      );
+    }
+    
+    // Pass through other errors with better messages
+    if (error.name === 'UsernameExistsException') {
+      throw new Error('An account with this email already exists');
+    }
+    
+    if (error.name === 'InvalidPasswordException') {
+      throw new Error('Password does not meet requirements');
+    }
+    
+    if (error.name === 'InvalidParameterException') {
+      throw new Error('Invalid email or password format');
+    }
+    
+    // Default error
+    throw new Error(error.message || 'Sign up failed');
+  }
 }
 
 // Confirm signup with verification code
@@ -69,16 +96,24 @@ export async function signIn(email: string, password: string): Promise<AuthUser>
     return user;
   }
 
-  const result = await amplifySignIn({
-    username: email,
-    password,
-  });
-
-  if (result.isSignedIn) {
-    return getCurrentUser() as Promise<AuthUser>;
+  try {
+    const result = await amplifySignIn({ username: email, password });
+    
+    console.log("🔍 DEBUG - amplifySignIn result:", result);
+    
+    if (result.isSignedIn) {
+      const u = await getCurrentUser();
+      if (!u) throw new Error("Signed in but user not found");
+      return u;
+    }
+    
+    // IMPORTANT: show what Cognito is asking for
+    const step = result.nextStep?.signInStep || "UNKNOWN_STEP";
+    throw new Error(`Sign in requires next step: ${step}`);
+  } catch (error: any) {
+    console.log("🔍 DEBUG - Raw signIn error:", error);
+    throw new Error(error?.message || "Sign in failed");
   }
-
-  throw new Error('Sign in failed');
 }
 
 // Sign in with Google (OAuth redirect)
@@ -89,6 +124,10 @@ export async function signInWithGoogle(): Promise<void> {
     localStorage.setItem(DEMO_SESSION_KEY, JSON.stringify(user));
     window.location.reload();
     return;
+  }
+
+  if (!isGoogleAuthConfigured) {
+    throw new Error('Google authentication is not configured. Please check your environment variables.');
   }
 
   await signInWithRedirect({ provider: 'Google' });
