@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import GenerateRecipe from "./GenerateRecipe";
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,6 +13,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
 import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
 import { CheckCircle2, Loader2 } from 'lucide-react';
+
+
+export default function Dashboard() {
+
 
 export const Dashboard = () => {
   const { toast } = useToast();
@@ -87,7 +92,8 @@ export const Dashboard = () => {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName} 👋</h2>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName} </h2>
+          <GenerateRecipe />
           <p className="text-muted-foreground">
             Your profile powers safer label checks, better recipes, and personalized recommendations.
           </p>
