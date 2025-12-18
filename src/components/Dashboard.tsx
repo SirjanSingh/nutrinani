@@ -1,182 +1,263 @@
-import { useState } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { CheckCircle2 } from "lucide-react";
-
-const conditions = ["Diabetes", "PCOS", "Hypertension", "High Cholesterol"];
-const allergies = ["Lactose intolerance", "Gluten allergy", "Nut allergy", "Soy allergy"];
-const dietTypes = ["Vegetarian", "Jain", "Vegan", "Eggitarian"];
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { useProfile } from '@/contexts/ProfileContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
+import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
 export const Dashboard = () => {
-  const [age, setAge] = useState("");
-  const [weight, setWeight] = useState("");
-  const [height, setHeight] = useState("");
-  const [activity, setActivity] = useState("");
-  const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
-  const [selectedAllergies, setSelectedAllergies] = useState<string[]>([]);
-  const [selectedDiet, setSelectedDiet] = useState<string[]>([]);
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const { profile, isProfileLoading, saveProfile } = useProfile();
+
+  const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const toggleSelection = (item: string, list: string[], setList: (list: string[]) => void) => {
-    if (list.includes(item)) {
-      setList(list.filter(i => i !== item));
-    } else {
-      setList([...list, item]);
-    }
+  const [name, setName] = useState('');
+  const [dob, setDob] = useState('');
+  const [gender, setGender] = useState<Gender | ''>('');
+  const [dietType, setDietType] = useState<DietType>('vegetarian');
+  const [favoriteFoodsText, setFavoriteFoodsText] = useState('');
+  const [dislikedFoodsText, setDislikedFoodsText] = useState('');
+  const [allergies, setAllergies] = useState<string[]>([]);
+  const [otherRestrictions, setOtherRestrictions] = useState('');
+
+  // Sync form from loaded profile
+  useEffect(() => {
+    const p = profile || {};
+    setName((p.name as string) || user?.name || '');
+    setDob((p.dob as string) || '');
+    setGender((p.gender as Gender) || '');
+    setDietType(((p.diet_type as DietType) || 'vegetarian') as DietType);
+    setFavoriteFoodsText(Array.isArray(p.favorite_foods) ? (p.favorite_foods as string[]).join(', ') : '');
+    setDislikedFoodsText(Array.isArray(p.disliked_foods) ? (p.disliked_foods as string[]).join(', ') : '');
+    setAllergies(Array.isArray(p.allergies) ? (p.allergies as string[]) : []);
+    setOtherRestrictions((p.other_restrictions as string) || '');
+  }, [profile, user?.name]);
+
+  const displayName = useMemo(() => name || user?.name || user?.email || 'there', [name, user?.name, user?.email]);
+  const age = useMemo(() => (dob ? calculateAge(dob) : 0), [dob]);
+
+  const toggleAllergy = (item: string) => {
+    setAllergies((prev) => (prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]));
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await saveProfile({
+        name: name.trim(),
+        dob,
+        gender: (gender || undefined) as Gender | undefined,
+        diet_type: dietType,
+        favorite_foods: parseCommaSeparated(favoriteFoodsText),
+        disliked_foods: parseCommaSeparated(dislikedFoodsText),
+        allergies,
+        other_restrictions: otherRestrictions,
+        onboarding_completed: true,
+      });
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+
+      toast({
+        title: 'Profile updated',
+        description: 'Your details were saved successfully.',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Save failed',
+        description: e?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold text-foreground mb-2">Welcome beta, Sirjan 👋</h2>
-        <p className="text-muted-foreground">Tell NutriNani your health profile so we can decode labels safely.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName} 👋</h2>
+          <p className="text-muted-foreground">
+            Your profile powers safer label checks, better recipes, and personalized recommendations.
+          </p>
+        </div>
       </div>
 
       <Card className="shadow-md border-border/50">
         <CardHeader>
-          <CardTitle>Basic details</CardTitle>
-          <CardDescription>Help us personalize your experience</CardDescription>
+          <CardTitle>Your profile</CardTitle>
+          <CardDescription>Everything is editable. Update anytime.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="age">Age</Label>
-              <Input
-                id="age"
-                type="number"
-                placeholder="25"
-                value={age}
-                onChange={(e) => setAge(e.target.value)}
-                className="rounded-xl"
-              />
+        <CardContent className="space-y-8">
+          {/* Basic info */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Basic info</h3>
+              {isProfileLoading && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading
+                </div>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="weight">Weight (kg)</Label>
-              <Input
-                id="weight"
-                type="number"
-                placeholder="65"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                className="rounded-xl"
-              />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Full name</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className="rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dob">Date of birth</Label>
+                <Input
+                  id="dob"
+                  type="date"
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="rounded-xl"
+                />
+              </div>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Age</Label>
+                <Input
+                  value={dob && age > 0 ? `${age} years` : ''}
+                  readOnly
+                  placeholder={dob ? '—' : 'Pick DOB to calculate'}
+                  className="rounded-xl bg-muted"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Gender (optional)</Label>
+                <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GENDER_OPTIONS.map((g) => (
+                      <SelectItem key={g.value} value={g.value}>
+                        {g.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Food preferences */}
+          <div className="space-y-4">
+            <h3 className="font-semibold">Food preferences</h3>
+
             <div className="space-y-2">
-              <Label htmlFor="height">Height (cm)</Label>
-              <Input
-                id="height"
-                type="number"
-                placeholder="170"
-                value={height}
-                onChange={(e) => setHeight(e.target.value)}
+              <Label>Diet type</Label>
+              <Select value={dietType} onValueChange={(v) => setDietType(v as DietType)}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="Select your diet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DIET_TYPE_OPTIONS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Favorite foods (optional)</Label>
+                <Input
+                  value={favoriteFoodsText}
+                  onChange={(e) => setFavoriteFoodsText(e.target.value)}
+                  placeholder="Paneer, dosa, pasta"
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Disliked foods (optional)</Label>
+                <Input
+                  value={dislikedFoodsText}
+                  onChange={(e) => setDislikedFoodsText(e.target.value)}
+                  placeholder="Brinjal, bitter gourd"
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Allergies */}
+          <div className="space-y-4">
+            <h3 className="font-semibold">Allergies & restrictions</h3>
+
+            <div className="space-y-3">
+              <Label>Food allergies (optional)</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {ALLERGY_OPTIONS.map((a) => {
+                  const checked = allergies.includes(a);
+                  return (
+                    <label
+                      key={a}
+                      className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggleAllergy(a)} />
+                      <span className="text-sm">{a}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Other dietary restrictions (optional)</Label>
+              <Textarea
+                value={otherRestrictions}
+                onChange={(e) => setOtherRestrictions(e.target.value)}
+                placeholder="Low sugar, Jain food, lactose sensitive"
                 className="rounded-xl"
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Activity Level</Label>
-            <Select value={activity} onValueChange={setActivity}>
-              <SelectTrigger className="rounded-xl">
-                <SelectValue placeholder="Select activity level" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sedentary">Sedentary</SelectItem>
-                <SelectItem value="moderate">Moderate</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-              </SelectContent>
-            </Select>
+
+          <div className="flex items-center gap-4">
+            <Button onClick={handleSave} size="lg" className="rounded-xl" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
+                </>
+              ) : (
+                'Save changes'
+              )}
+            </Button>
+            {saved && (
+              <div className="flex items-center gap-2 text-success">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="font-medium">Saved</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
-
-      <Card className="shadow-md border-border/50">
-        <CardHeader>
-          <CardTitle>Conditions & Allergies</CardTitle>
-          <CardDescription>Select all that apply to you</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-3">
-            <Label className="text-base font-semibold">Medical Conditions</Label>
-            <div className="flex flex-wrap gap-2">
-              {conditions.map((condition) => (
-                <Badge
-                  key={condition}
-                  variant={selectedConditions.includes(condition) ? "default" : "outline"}
-                  className={`cursor-pointer px-4 py-2 rounded-full transition-all ${
-                    selectedConditions.includes(condition)
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "hover:bg-accent"
-                  }`}
-                  onClick={() => toggleSelection(condition, selectedConditions, setSelectedConditions)}
-                >
-                  {condition}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <Label className="text-base font-semibold">Allergies</Label>
-            <div className="flex flex-wrap gap-2">
-              {allergies.map((allergy) => (
-                <Badge
-                  key={allergy}
-                  variant={selectedAllergies.includes(allergy) ? "default" : "outline"}
-                  className={`cursor-pointer px-4 py-2 rounded-full transition-all ${
-                    selectedAllergies.includes(allergy)
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "hover:bg-accent"
-                  }`}
-                  onClick={() => toggleSelection(allergy, selectedAllergies, setSelectedAllergies)}
-                >
-                  {allergy}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <Label className="text-base font-semibold">Dietary Preference</Label>
-            <div className="flex flex-wrap gap-2">
-              {dietTypes.map((diet) => (
-                <Badge
-                  key={diet}
-                  variant={selectedDiet.includes(diet) ? "default" : "outline"}
-                  className={`cursor-pointer px-4 py-2 rounded-full transition-all ${
-                    selectedDiet.includes(diet)
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                      : "hover:bg-accent"
-                  }`}
-                  onClick={() => toggleSelection(diet, selectedDiet, setSelectedDiet)}
-                >
-                  {diet}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center gap-4">
-        <Button onClick={handleSave} size="lg" className="rounded-xl">
-          Save health profile
-        </Button>
-        {saved && (
-          <div className="flex items-center gap-2 text-success">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="font-medium">Profile saved · last updated just now</span>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

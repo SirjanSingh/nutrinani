@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,7 @@ interface PasswordRequirement {
 }
 
 export function AuthPage() {
+  const navigate = useNavigate();
   const { login, register, loginWithGoogle, isDemoMode } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -92,6 +94,8 @@ export function AuthPage() {
 
     try {
       await register(signupEmail, signupPassword, signupName);
+      // Redirect to onboarding after successful signup
+      navigate('/onboarding');
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {

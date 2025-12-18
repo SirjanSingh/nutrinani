@@ -96,3 +96,37 @@ export async function fetchFormData<T>(path: string, formData: FormData): Promis
 
   return response.json();
 }
+
+// src/lib/api.ts
+
+export async function getJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { method: "GET", ...init });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || `GET ${url} failed (${res.status})`);
+  }
+  return data as T;
+}
+
+export async function putJSON<T>(
+  url: string,
+  body: any,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    body: JSON.stringify(body),
+    ...init,
+  });
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || `PUT ${url} failed (${res.status})`);
+  }
+  return data as T;
+}

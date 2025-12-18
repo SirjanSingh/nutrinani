@@ -6,6 +6,7 @@ import { Recipes } from "@/components/Recipes";
 import { VoiceBot } from "@/components/VoiceBot";
 import { Inventory } from "@/components/Inventory";
 import { Community } from "@/components/Community";
+import { ProfileMenu } from "@/components/ProfileMenu";
 
 export type Section = "dashboard" | "scanner" | "recipes" | "voice" | "inventory" | "community";
 
@@ -17,6 +18,13 @@ const Index = () => {
       <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} />
       
       <main className="flex-1 overflow-auto">
+        {/* Top bar */}
+        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border/50">
+          <div className="container mx-auto max-w-7xl px-6 md:px-8 lg:px-12 py-4 flex items-center justify-end">
+            <ProfileMenu />
+          </div>
+        </div>
+
         <div className="container mx-auto p-6 md:p-8 lg:p-12 max-w-7xl animate-fade-in">
           {activeSection === "dashboard" && <Dashboard />}
           {activeSection === "scanner" && <Scanner />}
