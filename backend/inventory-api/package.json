@@ -1,0 +1,10 @@
+{
+  "name": "nutrinani-inventory-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.857.0",
+    "@aws-sdk/lib-dynamodb": "^3.857.0"
+  }
+}

@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: NutriNani Inventory API (Lambda + DynamoDB + Cognito authorizer)
+
+Parameters:
+  InventoryTableName:
+    Type: String
+    Default: NutriNaniInventory
+  UserPoolId:
+    Type: String
+    Description: Cognito User Pool ID (e.g. ap-southeast-2_XXXX)
+  UserPoolClientId:
+    Type: String
+    Description: Cognito App Client ID used by the frontend (no client secret)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref InventoryTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: itemId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: itemId
+          KeyType: RANGE
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowOrigins:
+          - '*'
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}"
+              audience:
+                - !Ref UserPoolClientId
+            IdentitySource: "$request.header.Authorization"
+
+  InventoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handler.handler
+      Environment:
+        Variables:
+          INVENTORY_TABLE_NAME: !Ref InventoryTableName
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InventoryTableName
+      Events:
+        ListInventory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /inventory
+            Method: GET
+        CreateInventory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /inventory
+            Method: POST
+        UpdateInventory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /inventory/{id}
+            Method: PUT
+        DeleteInventory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /inventory/{id}
+            Method: DELETE
+
+Outputs:
+  ApiUrl:
+    Description: Base URL for the deployed HTTP API
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"

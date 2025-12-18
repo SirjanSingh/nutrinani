@@ -54,14 +54,15 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
     return Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
   };
 
-  const filteredItems = pantryItems?.filter((item) => {
+  const itemsArray = Array.isArray(pantryItems) ? pantryItems : [];
+  const filteredItems = itemsArray?.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = filterCategory === "all" || item.category === filterCategory;
     const matchesExpiring = !showExpiringOnly || isExpiringSoon(item.expiryDate) || isExpired(item.expiryDate);
     return matchesSearch && matchesCategory && matchesExpiring;
   });
 
-  const expiringItems = pantryItems?.filter((item) => isExpiringSoon(item.expiryDate) || isExpired(item.expiryDate)) || [];
+  const expiringItems = itemsArray?.filter((item) => isExpiringSoon(item.expiryDate) || isExpired(item.expiryDate)) || [];
 
   const handleAddItem = () => {
     if (!newItem.name.trim()) return;

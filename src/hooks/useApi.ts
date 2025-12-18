@@ -1,14 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { isDemoMode } from "@/lib/api";
-import { 
-  mockProfile, 
-  mockScanHistory, 
-  mockPantryItems, 
-  mockRecipes, 
-  mockCommunityPosts, 
+import { fetchJSON, isDemoMode } from "@/lib/api";
+import { CACHE_KEYS, loadFromCache, saveToCache } from "@/hooks/useSystemStatus";
+import {
+  mockProfile,
+  mockScanHistory,
+  mockPantryItems,
+  mockRecipes,
+  mockCommunityPosts,
   mockComments,
-  mockSubstitutions 
+  mockSubstitutions
 } from "@/lib/mockData";
 import type { Profile, ScanResult, PantryItem, Recipe, CommunityPost, Comment, SubstitutionSuggestion } from "@/types";
 
@@ -130,7 +131,20 @@ export function usePantryItems() {
         await delay(500);
         return mockPantryItems;
       }
-      return mockPantryItems;
+      try {
+        const items = await fetchJSON<PantryItem[]>(`/inventory`);
+        saveToCache(CACHE_KEYS.PANTRY, items);
+        if (!Array.isArray(items)) {
+          console.error("GET /inventory expected array, got:", items);
+          return []; // prevent UI crash
+        }
+        return items;
+      } catch (e) {
+        // Offline/back-end down: fallback to last known cache if available
+        const cached = loadFromCache<PantryItem[]>(CACHE_KEYS.PANTRY);
+        if (cached?.data) return cached.data;
+        throw e;
+      }
     },
   });
 }
@@ -145,7 +159,10 @@ export function useAddPantryItem() {
         await delay(500);
         return { ...item, id: `p${Date.now()}`, createdAt: new Date().toISOString() };
       }
-      return item;
+      return fetchJSON<PantryItem>(`/inventory`, {
+        method: 'POST',
+        body: JSON.stringify(item),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pantry"] });
@@ -167,7 +184,10 @@ export function useUpdatePantryItem() {
         await delay(500);
         return { ...item, updatedAt: new Date().toISOString() };
       }
-      return item;
+      return fetchJSON<PantryItem>(`/inventory/${encodeURIComponent(item.id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(item),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pantry"] });
@@ -189,6 +209,9 @@ export function useDeletePantryItem() {
         await delay(500);
         return { id };
       }
+      await fetchJSON<{ ok: true }>(`/inventory/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
       return { id };
     },
     onSuccess: () => {
@@ -266,7 +289,7 @@ export function useLikePost() {
       // Optimistic update
       await queryClient.cancelQueries({ queryKey: ["communityFeed"] });
       const previousPosts = queryClient.getQueryData<CommunityPost[]>(["communityFeed"]);
-      
+
       queryClient.setQueryData<CommunityPost[]>(["communityFeed"], (old) =>
         old?.map((post) =>
           post.id === postId
@@ -274,7 +297,7 @@ export function useLikePost() {
             : post
         )
       );
-      
+
       return { previousPosts };
     },
     onError: (_err, _postId, context) => {
