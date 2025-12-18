@@ -25,10 +25,10 @@ dist-ssr
 
 
 .env
-        1git.zip
-        ACTION_REQUIRED.md
-        COGNITO_SETUP.md
-        FIX_CLIENT_SECRET_ERROR.md
-        PASSWORD_VALIDATION.md
-        git.zip
-        public.zip
+1git.zip
+ACTION_REQUIRED.md
+COGNITO_SETUP.md
+FIX_CLIENT_SECRET_ERROR.md
+PASSWORD_VALIDATION.md
+git.zip
+public.zip
