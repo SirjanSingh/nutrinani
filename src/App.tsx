@@ -10,6 +10,15 @@ import { SystemBanner } from "@/components/SystemBanner";
 import Index from "./pages/Index";
 import OnboardingPage from "./pages/OnboardingPage";
 import NotFound from "./pages/NotFound";
+import GenerateRecipe from "./components/GenerateRecipe";
+function App() {
+  return (
+    <div>
+      <GenerateRecipe />
+    </div>
+  );
+}
+export default App;
 
 const queryClient = new QueryClient();
 
