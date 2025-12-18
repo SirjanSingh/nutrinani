@@ -1,4 +1,4 @@
-import { generateRecipe } from "@/services/recipeApi";
+import { generateRecipe } from "@/pages/recipeApi";
 
 export default function GenerateRecipe() {
   const handleClick = async () => {

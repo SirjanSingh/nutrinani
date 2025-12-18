@@ -14,11 +14,7 @@ import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, type Gender, type D
 import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 
-
 export default function Dashboard() {
-
-
-export const Dashboard = () => {
   const { toast } = useToast();
   const { user } = useAuth();
   const { profile, isProfileLoading, saveProfile } = useProfile();
