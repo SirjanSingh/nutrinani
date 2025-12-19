@@ -1,7 +1,7 @@
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ALLERGY_OPTIONS, type OnboardingFormData } from '@/types/onboarding';
+import { ALLERGY_OPTIONS, DISEASE_OPTIONS, type OnboardingFormData } from '@/types/onboarding';
 import { AlertTriangle } from 'lucide-react';
 
 interface OnboardingStep3Props {
@@ -17,6 +17,14 @@ export function OnboardingStep3({ data, onChange }: OnboardingStep3Props) {
       : currentAllergies.filter((a) => a !== allergy);
     
     onChange({ ...data, allergies: newAllergies });
+  };
+  const handleDiseaseToggle = (disease: string, checked: boolean) => {
+    const currentDiseases = data.diseases || [];
+    const newDiseases = checked
+      ? [...currentDiseases, disease]
+      : currentDiseases.filter((d) => d !== disease);
+
+    onChange({ ...data, diseases: newDiseases });
   };
 
   const handleOtherRestrictionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -66,6 +74,44 @@ export function OnboardingStep3({ data, onChange }: OnboardingStep3Props) {
         </div>
         <p className="text-xs text-muted-foreground">
           Select all that apply
+        </p>
+      </div>
+      {/* Health Conditions */}
+      <div className="space-y-3">
+        <Label className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          Health Conditions / Diseases (optional)
+        </Label>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {DISEASE_OPTIONS.map((disease) => {
+            const isChecked = data.diseases?.includes(disease) || false;
+
+            return (
+              <div
+                key={disease}
+                className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-accent transition-colors"
+              >
+                <Checkbox
+                  id={`disease-${disease}`}
+                  checked={isChecked}
+                  onCheckedChange={(checked) =>
+                    handleDiseaseToggle(disease, checked as boolean)
+                  }
+                />
+                <Label
+                  htmlFor={`disease-${disease}`}
+                  className="flex-1 cursor-pointer font-normal"
+                >
+                  {disease}
+                </Label>
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          This helps us personalize food safety and recommendations
         </p>
       </div>
 

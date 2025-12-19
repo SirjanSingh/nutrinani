@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
+import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS,DISEASE_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
 import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -30,6 +30,8 @@ export default function Dashboard() {
   const [dislikedFoodsText, setDislikedFoodsText] = useState('');
   const [allergies, setAllergies] = useState<string[]>([]);
   const [otherRestrictions, setOtherRestrictions] = useState('');
+  const [diseases, setDiseases] = useState<string[]>([]);
+
 
   // Sync form from loaded profile
   useEffect(() => {
@@ -41,6 +43,7 @@ export default function Dashboard() {
     setFavoriteFoodsText(Array.isArray(p.favorite_foods) ? (p.favorite_foods as string[]).join(', ') : '');
     setDislikedFoodsText(Array.isArray(p.disliked_foods) ? (p.disliked_foods as string[]).join(', ') : '');
     setAllergies(Array.isArray(p.allergies) ? (p.allergies as string[]) : []);
+    setDiseases(Array.isArray(p.diseases) ? (p.diseases as string[]) : []);
     setOtherRestrictions((p.other_restrictions as string) || '');
   }, [profile, user?.name]);
 
@@ -49,6 +52,11 @@ export default function Dashboard() {
 
   const toggleAllergy = (item: string) => {
     setAllergies((prev) => (prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]));
+  };
+  const toggleDisease = (item: string) => {
+    setDiseases((prev) =>
+      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
+    );
   };
 
   const handleSave = async () => {
@@ -62,6 +70,7 @@ export default function Dashboard() {
         favorite_foods: parseCommaSeparated(favoriteFoodsText),
         disliked_foods: parseCommaSeparated(dislikedFoodsText),
         allergies,
+        diseases,
         other_restrictions: otherRestrictions,
         onboarding_completed: true,
       });
@@ -240,6 +249,32 @@ export default function Dashboard() {
               />
             </div>
           </div>
+          {/* Diseases */}
+<div className="space-y-4">
+  <h3 className="font-semibold">Health conditions</h3>
+
+  <div className="space-y-3">
+    <Label>Diseases / medical conditions (optional)</Label>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {DISEASE_OPTIONS.map((d) => {
+        const checked = diseases.includes(d);
+        return (
+          <label
+            key={d}
+            className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
+          >
+            <Checkbox checked={checked} onCheckedChange={() => toggleDisease(d)} />
+            <span className="text-sm">{d}</span>
+          </label>
+        );
+      })}
+    </div>
+    <p className="text-xs text-muted-foreground">
+      Helps us personalize food safety and nutrition advice
+    </p>
+  </div>
+</div>
+
 
           <div className="flex items-center gap-4">
             <Button onClick={handleSave} size="lg" className="rounded-xl" disabled={isSaving}>

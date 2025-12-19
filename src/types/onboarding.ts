@@ -34,6 +34,28 @@ export const ALLERGY_OPTIONS = [
   'Fish',
   'Shellfish',
   'Sesame',
+  'Mustard',
+  'Corn / Maize',
+  'Sulphites',
+  'Lupin',
+  'Buckwheat',
+  'Coconut',
+] as const;
+
+// Predefined disease / health condition options
+export const DISEASE_OPTIONS = [
+  'PCOS / PCOD',
+  'Diabetes (Type 1 / Type 2)',
+  'Thyroid disorder',
+  'Hypertension (High BP)',
+  'Heart disease',
+  'Celiac disease',
+  'IBS (Irritable Bowel Syndrome)',
+  'Anemia',
+  'Fatty liver',
+  'Kidney disease',
+  'Gout',
+  'Migraine',
 ] as const;
 
 // Diet type options with display labels

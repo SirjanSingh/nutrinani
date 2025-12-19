@@ -72,9 +72,7 @@ export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
             </Button>
           </div>
         )}
-        <p className="text-xs text-muted-foreground">
-          Demo version for hackathon
-        </p>
+      
       </div>
     </aside>
   );
