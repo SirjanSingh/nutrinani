@@ -5,8 +5,10 @@ import { BrowserMultiFormatReader } from "@zxing/browser"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText } from "lucide-react"
+import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { useProfile } from "@/contexts/ProfileContext"
+import { useAuth } from "@/contexts/AuthContext"
 
 /* ================= CONFIG ================= */
 const API_BASE = "https://ubav5knsp8.execute-api.ap-south-1.amazonaws.com"
@@ -43,6 +45,9 @@ const loadTesseract = (): Promise<any> => {
 }
 
 export const Scanner = () => {
+  const { user } = useAuth()
+  const { profile } = useProfile()
+  
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -61,6 +66,131 @@ export const Scanner = () => {
   const [ocrProcessing, setOcrProcessing] = useState(false)
   const [ocrProgress, setOcrProgress] = useState(0)
   const [processingStep, setProcessingStep] = useState("")
+  const [warnings, setWarnings] = useState<string[]>([])
+
+  /* ================= CHECK FOR ALLERGENS, DISLIKES & DISEASES ================= */
+  const checkIngredients = (ingredients_en: string[], ingredients_hi: string[]) => {
+    if (!profile) return []
+
+    const allIngredients = [...ingredients_en, ...ingredients_hi].map((ing) => ing.toLowerCase())
+    const foundWarnings: string[] = []
+
+    // Check allergies
+    if (profile.allergies && Array.isArray(profile.allergies) && profile.allergies.length > 0) {
+      profile.allergies.forEach((allergen: string) => {
+        const allergenLower = allergen.toLowerCase()
+        const found = allIngredients.some((ing) => ing.includes(allergenLower))
+        if (found) {
+          foundWarnings.push(`🚨 ALLERGY ALERT: Contains ${allergen}`)
+        }
+      })
+    }
+
+    // Check disliked foods
+    if (profile.disliked_foods && Array.isArray(profile.disliked_foods) && profile.disliked_foods.length > 0) {
+      profile.disliked_foods.forEach((dislike: string) => {
+        const dislikeLower = dislike.toLowerCase()
+        const found = allIngredients.some((ing) => ing.includes(dislikeLower))
+        if (found) {
+          foundWarnings.push(`❌ DISLIKE: Contains ${dislike}`)
+        }
+      })
+    }
+
+    // Check disease-related restrictions
+    if (profile.diseases && Array.isArray(profile.diseases) && profile.diseases.length > 0) {
+      const diseaseWarnings: string[] = []
+      
+      profile.diseases.forEach((disease: string) => {
+        const diseaseLower = disease.toLowerCase()
+        
+        // DIABETES checks
+        if (diseaseLower.includes('diabetes')) {
+          const sugarTerms = ['sugar', 'glucose', 'fructose', 'sucrose', 'corn syrup', 'honey', 'molasses', 'dextrose']
+          const foundSugar = sugarTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundSugar) {
+            diseaseWarnings.push(`⚕️ DIABETES WARNING: Contains high sugar ingredients`)
+          }
+        }
+        
+        // HYPERTENSION checks
+        if (diseaseLower.includes('hypertension') || diseaseLower.includes('high bp')) {
+          const saltTerms = ['salt', 'sodium', 'monosodium glutamate', 'msg', 'sodium chloride']
+          const foundSalt = saltTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundSalt) {
+            diseaseWarnings.push(`⚕️ HYPERTENSION WARNING: Contains high sodium/salt`)
+          }
+        }
+        
+        // HEART DISEASE checks
+        if (diseaseLower.includes('heart')) {
+          const fatTerms = ['palm oil', 'hydrogenated', 'trans fat', 'saturated fat', 'lard', 'butter']
+          const foundFat = fatTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundFat) {
+            diseaseWarnings.push(`⚕️ HEART HEALTH WARNING: Contains unhealthy fats`)
+          }
+        }
+        
+        // CELIAC DISEASE / GLUTEN checks
+        if (diseaseLower.includes('celiac')) {
+          const glutenTerms = ['wheat', 'gluten', 'barley', 'rye', 'malt', 'semolina', 'durum']
+          const foundGluten = glutenTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundGluten) {
+            diseaseWarnings.push(`⚕️ CELIAC WARNING: Contains gluten`)
+          }
+        }
+        
+        // FATTY LIVER checks
+        if (diseaseLower.includes('fatty liver')) {
+          const fattyLiverTerms = ['palm oil', 'hydrogenated', 'trans fat', 'high fructose corn syrup']
+          const foundRisk = fattyLiverTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundRisk) {
+            diseaseWarnings.push(`⚕️ FATTY LIVER WARNING: Contains ingredients to avoid`)
+          }
+        }
+        
+        // GOUT checks
+        if (diseaseLower.includes('gout')) {
+          const purinTerms = ['yeast extract', 'meat extract', 'anchovies', 'sardines']
+          const foundPurin = purinTerms.some(term => 
+            allIngredients.some(ing => ing.includes(term))
+          )
+          if (foundPurin) {
+            diseaseWarnings.push(`⚕️ GOUT WARNING: Contains high-purine ingredients`)
+          }
+        }
+      })
+      
+      foundWarnings.push(...diseaseWarnings)
+    }
+
+    // Check other restrictions
+    if (profile.other_restrictions && typeof profile.other_restrictions === 'string') {
+      const restrictionsList = profile.other_restrictions
+        .split(',')
+        .map((r: string) => r.trim().toLowerCase())
+        .filter((r: string) => r.length > 2)
+      
+      restrictionsList.forEach((restriction: string) => {
+        const found = allIngredients.some((ing) => ing.includes(restriction))
+        if (found) {
+          foundWarnings.push(`⚠️ RESTRICTION: Contains ${restriction}`)
+        }
+      })
+    }
+
+    return foundWarnings
+  }
 
   /* ================= MANUAL BARCODE ENTRY ================= */
   const handleManualSubmit = async () => {
@@ -259,7 +389,6 @@ export const Scanner = () => {
 
       setProcessingStep("Pre-processing image...")
 
-      // Pre-process image for better OCR
       const processedImage = await preprocessImage(imageFile)
 
       setProcessingStep("Analyzing image...")
@@ -303,21 +432,17 @@ export const Scanner = () => {
       }
 
       img.onload = () => {
-        // Aggressive upscaling for tiny text (3x instead of 2x)
         const scale = 3
         canvas.width = img.width * scale
         canvas.height = img.height * scale
 
-        // Draw with high quality
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = "high"
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
 
-        // Get image data
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageData.data
 
-        // Convert to grayscale first for better OCR
         for (let i = 0; i < data.length; i += 4) {
           const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
           data[i] = gray
@@ -325,7 +450,6 @@ export const Scanner = () => {
           data[i + 2] = gray
         }
 
-        // Apply adaptive thresholding (makes text sharper)
         const threshold = 128
         for (let i = 0; i < data.length; i += 4) {
           const value = data[i] > threshold ? 255 : 0
@@ -334,7 +458,6 @@ export const Scanner = () => {
           data[i + 2] = value
         }
 
-        // Apply stronger contrast
         const contrast = 80
         const factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
 
@@ -359,13 +482,13 @@ export const Scanner = () => {
       img.src = URL.createObjectURL(file)
     })
   }
+
   /* ================= INGREDIENT EXTRACTION ================= */
   const extractIngredients = (text: string) => {
     const cleaned = text.replace(/\n/g, " ").replace(/\s+/g, " ").replace(/\r/g, " ").trim()
 
     console.log("🔍 Full OCR text:", cleaned)
 
-    // Step 1: Find "ingredient" or "ingredients" (case insensitive)
     const keywordPatterns = [/ingredients?[\s:]+/i, /सामग्री[\s:]+/i, /contains?[\s:]+/i]
 
     let startIdx = -1
@@ -390,11 +513,9 @@ export const Scanner = () => {
       }
     }
 
-    // Step 2: Extract everything after the keyword
     const afterKeyword = cleaned.substring(startIdx + matchedKeyword.length)
     console.log("📝 Text after keyword:", afterKeyword.substring(0, 200))
 
-    // Step 3: Stop at common endings
     const stopPatterns = [
       /allergen/i,
       /nutrition/i,
@@ -427,34 +548,25 @@ export const Scanner = () => {
       }
     }
 
-    // Step 4: Split by delimiters
     const items = ingredientText
       .split(/[,،;।]+/)
       .map((item) => item.trim())
       .filter((item) => {
-        // Remove items that are too short or too long
         if (item.length < 2 || item.length > 100) return false
-        // Remove pure numbers or percentages
         if (/^[0-9%.\s]+$/.test(item)) return false
-        // Keep items with at least some letters
         return /[a-zA-Z\u0900-\u097F]/.test(item)
       })
       .slice(0, 50)
 
     console.log("📋 Split items:", items)
 
-    // Step 5: Separate English and Hindi
     const ingredients_en: string[] = []
     const ingredients_hi: string[] = []
 
     items.forEach((item) => {
-      // Check for Hindi/Devanagari characters
       if (/[\u0900-\u097F]/.test(item)) {
         ingredients_hi.push(item)
-      }
-      // Check for English characters (must have at least 2 consecutive letters)
-      else if (/[a-zA-Z]{2,}/.test(item)) {
-        // Clean up common OCR errors
+      } else if (/[a-zA-Z]{2,}/.test(item)) {
         const cleaned_item = item.replace(/[|]/g, "I").replace(/[0]/g, "O").trim()
         ingredients_en.push(cleaned_item)
       }
@@ -524,6 +636,13 @@ export const Scanner = () => {
 
       if (data.success && data.product && hasIngredients) {
         setProcessingStep("")
+        
+        const foundWarnings = checkIngredients(
+          data.product.ingredients_en || [],
+          data.product.ingredients_hi || []
+        )
+        setWarnings(foundWarnings)
+
         setResult({
           name: data.product.name || "Unknown Product",
           ingredients_en: data.product.ingredients_en || [],
@@ -533,7 +652,7 @@ export const Scanner = () => {
           barcode: barcode,
           verdict: {
             description: `✅ Found in ${data.source}. Contains ${data.product.ingredients_en?.length || 0} ingredients.`,
-            riskScore: 0,
+            riskScore: foundWarnings.length > 0 ? 80 : 0,
           },
         })
       } else {
@@ -623,6 +742,9 @@ export const Scanner = () => {
 
       console.log("✅ OCR completed successfully")
 
+      const foundWarnings = checkIngredients(ocrResult.ingredients_en, ocrResult.ingredients_hi)
+      setWarnings(foundWarnings)
+
       setResult({
         name: barcode ? `Product: ${barcode}` : "OCR Analysis",
         ingredients_en: ocrResult.ingredients_en,
@@ -632,7 +754,7 @@ export const Scanner = () => {
         barcode: barcode,
         verdict: {
           description: `✅ OCR extracted ${ocrResult.ingredients_en.length + ocrResult.ingredients_hi.length} ingredients. Please verify accuracy.`,
-          riskScore: 0,
+          riskScore: foundWarnings.length > 0 ? 80 : 0,
         },
       })
 
@@ -676,6 +798,48 @@ export const Scanner = () => {
                 <CardDescription>Choose a scanning method</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* USER PROFILE STATUS */}
+                {profile && (
+                  <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <User className="w-4 h-4 text-blue-600" />
+                      <p className="text-xs font-semibold text-blue-900">
+                        Profile Active: {profile.name || user?.name || user?.email}
+                      </p>
+                    </div>
+                    <div className="text-xs text-blue-700 space-y-1">
+                      {profile.allergies && Array.isArray(profile.allergies) && profile.allergies.length > 0 && (
+                        <p className="font-medium">
+                          🚨 Allergies: {profile.allergies.join(", ")}
+                        </p>
+                      )}
+                      {profile.disliked_foods && Array.isArray(profile.disliked_foods) && profile.disliked_foods.length > 0 && (
+                        <p>❌ Dislikes: {profile.disliked_foods.join(", ")}</p>
+                      )}
+                      {profile.diseases && Array.isArray(profile.diseases) && profile.diseases.length > 0 && (
+                        <p className="font-medium">⚕️ Health: {profile.diseases.join(", ")}</p>
+                      )}
+                      {profile.other_restrictions && (
+                        <p>⚠️ Restrictions: {profile.other_restrictions}</p>
+                      )}
+                      {(!profile.allergies || profile.allergies.length === 0) &&
+                        (!profile.disliked_foods || profile.disliked_foods.length === 0) &&
+                        (!profile.diseases || profile.diseases.length === 0) &&
+                        !profile.other_restrictions && (
+                          <p className="text-blue-600">No restrictions set. Update your profile to enable warnings.</p>
+                        )}
+                    </div>
+                  </div>
+                )}
+
+                {!profile && user && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-900">
+                      ⚠️ Profile not loaded. Go to Dashboard to set up allergies and restrictions.
+                    </p>
+                  </div>
+                )}
+
                 {/* PROCESSING STATUS */}
                 {(ocrProcessing || processingStep) && (
                   <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
@@ -910,6 +1074,50 @@ export const Scanner = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                      {/* WARNINGS - ALLERGIES, DISLIKES & DISEASES */}
+                      {warnings.length > 0 && (
+                        <div className="p-4 bg-red-50 border-2 border-red-500 rounded-lg space-y-2 animate-pulse">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-6 h-6 text-red-600" />
+                            <h3 className="text-base font-bold text-red-900">⚠️ WARNINGS DETECTED</h3>
+                          </div>
+                          <div className="space-y-2">
+                            {warnings.map((warning, idx) => {
+                              const isAllergy = warning.includes('ALLERGY ALERT')
+                              const isDisease = warning.includes('WARNING:')
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-3 rounded font-medium ${
+                                    isAllergy
+                                      ? 'bg-red-200 border-2 border-red-600 text-red-900'
+                                      : isDisease
+                                      ? 'bg-orange-100 border border-orange-400 text-orange-900'
+                                      : 'bg-red-100 border border-red-400 text-red-900'
+                                  }`}
+                                >
+                                  {warning}
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <p className="text-xs text-red-700 mt-3 font-medium bg-red-100 p-2 rounded">
+                            ⚠️ This product contains ingredients that may not be safe for you based on your profile. Please verify carefully before consuming.
+                          </p>
+                        </div>
+                      )}
+
+                      {warnings.length === 0 && result && !result.needsOCR && (
+                        <div className="p-3 bg-green-50 border border-green-300 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <p className="text-sm font-medium text-green-900">
+                              ✅ No allergens or restricted ingredients detected
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {result.needsOCR && (
                         <div className="p-4 bg-yellow-50 border-2 border-yellow-400 rounded-lg space-y-3">
                           <p className="text-sm font-medium text-yellow-900">
