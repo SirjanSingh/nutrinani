@@ -56,7 +56,7 @@ export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
         })}
       </nav>
 
-      <div className="mt-auto pt-6 border-t border-sidebar-border space-y-3">
+      {/* <div className="mt-auto pt-6 border-t border-sidebar-border space-y-3">
         {user && (
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground truncate flex-1" title={user.email}>
@@ -73,7 +73,7 @@ export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
           </div>
         )}
       
-      </div>
+      </div> */}
     </aside>
   );
 };

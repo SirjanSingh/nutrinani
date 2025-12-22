@@ -22,7 +22,6 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <SystemBanner />
             <Routes>
               <Route path="/onboarding" element={<AuthGate><OnboardingPage /></AuthGate>} />
               <Route path="/" element={<AuthGate><Index /></AuthGate>} />

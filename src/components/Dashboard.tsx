@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS,DISEASE_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
+import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, DISEASE_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
 import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 
@@ -22,16 +22,22 @@ export default function Dashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Basic info
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [gender, setGender] = useState<Gender | ''>('');
+
+  // Food preferences
   const [dietType, setDietType] = useState<DietType>('vegetarian');
   const [favoriteFoodsText, setFavoriteFoodsText] = useState('');
   const [dislikedFoodsText, setDislikedFoodsText] = useState('');
+
+  // Allergies & restrictions
   const [allergies, setAllergies] = useState<string[]>([]);
   const [otherRestrictions, setOtherRestrictions] = useState('');
-  const [diseases, setDiseases] = useState<string[]>([]);
 
+  // Health conditions
+  const [diseases, setDiseases] = useState<string[]>([]);
 
   // Sync form from loaded profile
   useEffect(() => {
@@ -53,6 +59,7 @@ export default function Dashboard() {
   const toggleAllergy = (item: string) => {
     setAllergies((prev) => (prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]));
   };
+
   const toggleDisease = (item: string) => {
     setDiseases((prev) =>
       prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
@@ -97,8 +104,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName} </h2>
-          <GenerateRecipe />
+          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName}</h2>
           <p className="text-muted-foreground">
             Your profile powers safer label checks, better recipes, and personalized recommendations.
           </p>
@@ -217,7 +223,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Allergies */}
+          {/* Allergies & restrictions */}
           <div className="space-y-4">
             <h3 className="font-semibold">Allergies & restrictions</h3>
 
@@ -249,33 +255,34 @@ export default function Dashboard() {
               />
             </div>
           </div>
-          {/* Diseases */}
-<div className="space-y-4">
-  <h3 className="font-semibold">Health conditions</h3>
 
-  <div className="space-y-3">
-    <Label>Diseases / medical conditions (optional)</Label>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {DISEASE_OPTIONS.map((d) => {
-        const checked = diseases.includes(d);
-        return (
-          <label
-            key={d}
-            className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
-          >
-            <Checkbox checked={checked} onCheckedChange={() => toggleDisease(d)} />
-            <span className="text-sm">{d}</span>
-          </label>
-        );
-      })}
-    </div>
-    <p className="text-xs text-muted-foreground">
-      Helps us personalize food safety and nutrition advice
-    </p>
-  </div>
-</div>
+          {/* Health conditions */}
+          <div className="space-y-4">
+            <h3 className="font-semibold">Health conditions</h3>
 
+            <div className="space-y-3">
+              <Label>Diseases / medical conditions (optional)</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {DISEASE_OPTIONS.map((d) => {
+                  const checked = diseases.includes(d);
+                  return (
+                    <label
+                      key={d}
+                      className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggleDisease(d)} />
+                      <span className="text-sm">{d}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Helps us personalize food safety and nutrition advice
+              </p>
+            </div>
+          </div>
 
+          {/* Save button */}
           <div className="flex items-center gap-4">
             <Button onClick={handleSave} size="lg" className="rounded-xl" disabled={isSaving}>
               {isSaving ? (
@@ -297,4 +304,4 @@ export default function Dashboard() {
       </Card>
     </div>
   );
-};
+}

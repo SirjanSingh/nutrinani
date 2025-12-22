@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
-import { Dashboard } from "@/components/Dashboard";
+import Dashboard from "@/components/Dashboard";
 import { Scanner } from "@/components/Scanner";
 import Recipes from "@/components/Recipes";
 import { VoiceBot } from "@/components/VoiceBot";
