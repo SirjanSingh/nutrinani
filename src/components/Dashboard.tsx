@@ -250,7 +250,7 @@ export default function Dashboard() {
               <Textarea
                 value={otherRestrictions}
                 onChange={(e) => setOtherRestrictions(e.target.value)}
-                placeholder="Low sugar, Jain food, lactose sensitive"
+                placeholder="Low sugar, diabetic safe, lactose sensitive"
                 className="rounded-xl"
               />
             </div>
