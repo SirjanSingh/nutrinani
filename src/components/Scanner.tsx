@@ -1,17 +1,19 @@
- "use client"
+"use client"
 
 import { useEffect, useRef, useState } from "react"
 import { BrowserMultiFormatReader } from "@zxing/browser"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User } from "lucide-react"
+import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User, Trash2, History } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { useProfile } from "@/contexts/ProfileContext"
 import { useAuth } from "@/contexts/AuthContext"
 
 /* ================= CONFIG ================= */
-const API_BASE = "https://ubav5knsp8.execute-api.ap-south-1.amazonaws.com"
+const SCANNER_API = "https://ubav5knsp8.execute-api.ap-south-1.amazonaws.com"  // ap-south-1
+const RECIPE_API = "https://tfn02c762l.execute-api.ap-southeast-2.amazonaws.com"  // ap-southeast-2
+const STORAGE_KEY = "scan_history"
 
 /* ================= ZXING READER ================= */
 const codeReader = new BrowserMultiFormatReader()
@@ -44,6 +46,46 @@ const loadTesseract = (): Promise<any> => {
   })
 }
 
+/* ================= STORAGE UTILITIES ================= */
+const getScanHistory = (): any[] => {
+  if (typeof window === "undefined") return []
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    return data ? JSON.parse(data) : []
+  } catch (err) {
+    console.error("Error reading scan history:", err)
+    return []
+  }
+}
+
+const saveScanToHistory = (scanData: any) => {
+  if (typeof window === "undefined") return
+  try {
+    const history = getScanHistory()
+    const newScan = {
+      ...scanData,
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+    }
+    history.unshift(newScan)
+    // Keep only last 50 scans
+    const limited = history.slice(0, 50)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(limited))
+    return newScan
+  } catch (err) {
+    console.error("Error saving scan:", err)
+  }
+}
+
+const clearScanHistory = () => {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch (err) {
+    console.error("Error clearing history:", err)
+  }
+}
+
 export const Scanner = () => {
   const { user } = useAuth()
   const { profile } = useProfile()
@@ -67,6 +109,14 @@ export const Scanner = () => {
   const [ocrProgress, setOcrProgress] = useState(0)
   const [processingStep, setProcessingStep] = useState("")
   const [warnings, setWarnings] = useState<string[]>([])
+  const [scanHistory, setScanHistory] = useState<any[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+
+  /* ================= LOAD HISTORY ON MOUNT ================= */
+  useEffect(() => {
+    const history = getScanHistory()
+    setScanHistory(history)
+  }, [])
 
   /* ================= CHECK FOR ALLERGENS, DISLIKES & DISEASES ================= */
   const checkIngredients = (ingredients_en: string[], ingredients_hi: string[]) => {
@@ -75,7 +125,6 @@ export const Scanner = () => {
     const allIngredients = [...ingredients_en, ...ingredients_hi].map((ing) => ing.toLowerCase())
     const foundWarnings: string[] = []
 
-    // Check allergies
     if (profile.allergies && Array.isArray(profile.allergies) && profile.allergies.length > 0) {
       profile.allergies.forEach((allergen: string) => {
         const allergenLower = allergen.toLowerCase()
@@ -86,7 +135,6 @@ export const Scanner = () => {
       })
     }
 
-    // Check disliked foods
     if (profile.disliked_foods && Array.isArray(profile.disliked_foods) && profile.disliked_foods.length > 0) {
       profile.disliked_foods.forEach((dislike: string) => {
         const dislikeLower = dislike.toLowerCase()
@@ -97,14 +145,12 @@ export const Scanner = () => {
       })
     }
 
-    // Check disease-related restrictions
     if (profile.diseases && Array.isArray(profile.diseases) && profile.diseases.length > 0) {
       const diseaseWarnings: string[] = []
       
       profile.diseases.forEach((disease: string) => {
         const diseaseLower = disease.toLowerCase()
         
-        // DIABETES checks
         if (diseaseLower.includes('diabetes')) {
           const sugarTerms = ['sugar', 'glucose', 'fructose', 'sucrose', 'corn syrup', 'honey', 'molasses', 'dextrose']
           const foundSugar = sugarTerms.some(term => 
@@ -115,7 +161,6 @@ export const Scanner = () => {
           }
         }
         
-        // HYPERTENSION checks
         if (diseaseLower.includes('hypertension') || diseaseLower.includes('high bp')) {
           const saltTerms = ['salt', 'sodium', 'monosodium glutamate', 'msg', 'sodium chloride']
           const foundSalt = saltTerms.some(term => 
@@ -126,7 +171,6 @@ export const Scanner = () => {
           }
         }
         
-        // HEART DISEASE checks
         if (diseaseLower.includes('heart')) {
           const fatTerms = ['palm oil', 'hydrogenated', 'trans fat', 'saturated fat', 'lard', 'butter']
           const foundFat = fatTerms.some(term => 
@@ -137,7 +181,6 @@ export const Scanner = () => {
           }
         }
         
-        // CELIAC DISEASE / GLUTEN checks
         if (diseaseLower.includes('celiac')) {
           const glutenTerms = ['wheat', 'gluten', 'barley', 'rye', 'malt', 'semolina', 'durum']
           const foundGluten = glutenTerms.some(term => 
@@ -148,7 +191,6 @@ export const Scanner = () => {
           }
         }
         
-        // FATTY LIVER checks
         if (diseaseLower.includes('fatty liver')) {
           const fattyLiverTerms = ['palm oil', 'hydrogenated', 'trans fat', 'high fructose corn syrup']
           const foundRisk = fattyLiverTerms.some(term => 
@@ -159,7 +201,6 @@ export const Scanner = () => {
           }
         }
         
-        // GOUT checks
         if (diseaseLower.includes('gout')) {
           const purinTerms = ['yeast extract', 'meat extract', 'anchovies', 'sardines']
           const foundPurin = purinTerms.some(term => 
@@ -174,7 +215,6 @@ export const Scanner = () => {
       foundWarnings.push(...diseaseWarnings)
     }
 
-    // Check other restrictions
     if (profile.other_restrictions && typeof profile.other_restrictions === 'string') {
       const restrictionsList = profile.other_restrictions
         .split(',')
@@ -616,7 +656,7 @@ export const Scanner = () => {
       console.log("📡 Fetching product from API:", barcode)
       setProcessingStep("Searching database...")
 
-      const res = await fetch(`${API_BASE}/scan`, {
+      const res = await fetch(`${SCANNER_API}/scan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ barcode }),
@@ -643,7 +683,7 @@ export const Scanner = () => {
         )
         setWarnings(foundWarnings)
 
-        setResult({
+        const resultData = {
           name: data.product.name || "Unknown Product",
           ingredients_en: data.product.ingredients_en || [],
           ingredients_hi: data.product.ingredients_hi || [],
@@ -654,11 +694,17 @@ export const Scanner = () => {
             description: `✅ Found in ${data.source}. Contains ${data.product.ingredients_en?.length || 0} ingredients.`,
             riskScore: foundWarnings.length > 0 ? 80 : 0,
           },
-        })
+        }
+
+        setResult(resultData)
+        saveScanToHistory(resultData)
+        const updated = getScanHistory()
+        setScanHistory(updated)
       } else {
         console.log("⚠️ Ingredients missing - need OCR")
         setProcessingStep("")
-        setResult({
+        
+        const resultData = {
           name: data.product?.name || `Barcode: ${barcode}`,
           ingredients_en: [],
           ingredients_hi: [],
@@ -671,12 +717,18 @@ export const Scanner = () => {
               "⚠️ Ingredients not available in database. Upload a clear image of the ingredients list for OCR analysis.",
             riskScore: 0,
           },
-        })
+        }
+
+        setResult(resultData)
+        saveScanToHistory(resultData)
+        const updated = getScanHistory()
+        setScanHistory(updated)
       }
     } catch (err: any) {
       console.error("❌ API Error:", err)
       setProcessingStep("")
-      setResult({
+      
+      const resultData = {
         name: `Barcode: ${barcode}`,
         ingredients_en: [],
         ingredients_hi: [],
@@ -688,7 +740,12 @@ export const Scanner = () => {
           description: `⚠️ Could not fetch from database: ${err.message}. Upload ingredients image for OCR.`,
           riskScore: 0,
         },
-      })
+      }
+
+      setResult(resultData)
+      saveScanToHistory(resultData)
+      const updated = getScanHistory()
+      setScanHistory(updated)
     }
   }
 
@@ -745,7 +802,7 @@ export const Scanner = () => {
       const foundWarnings = checkIngredients(ocrResult.ingredients_en, ocrResult.ingredients_hi)
       setWarnings(foundWarnings)
 
-      setResult({
+      const resultData = {
         name: barcode ? `Product: ${barcode}` : "OCR Analysis",
         ingredients_en: ocrResult.ingredients_en,
         ingredients_hi: ocrResult.ingredients_hi,
@@ -756,17 +813,27 @@ export const Scanner = () => {
           description: `✅ OCR extracted ${ocrResult.ingredients_en.length + ocrResult.ingredients_hi.length} ingredients. Please verify accuracy.`,
           riskScore: foundWarnings.length > 0 ? 80 : 0,
         },
-      })
+      }
 
-      console.log("💾 TODO: Save to database:", {
-        barcode,
-        ingredients_en: ocrResult.ingredients_en,
-        ingredients_hi: ocrResult.ingredients_hi,
-      })
+      setResult(resultData)
+      saveScanToHistory(resultData)
+      const updated = getScanHistory()
+      setScanHistory(updated)
+
+      console.log("💾 Scan saved to localStorage")
     } catch (err: any) {
       console.error("❌ OCR failed:", err)
       alert(`OCR failed: ${err.message}`)
     }
+  }
+
+  /* ================= LOAD PREVIOUS SCAN ================= */
+  const loadPreviousScan = (scan: any) => {
+    setResult(scan)
+    setBarcode(scan.barcode || null)
+    setShowHistory(false)
+    const foundWarnings = checkIngredients(scan.ingredients_en || [], scan.ingredients_hi || [])
+    setWarnings(foundWarnings)
   }
 
   /* ================= CLEANUP ================= */
@@ -851,6 +918,16 @@ export const Scanner = () => {
                   </div>
                 )}
 
+                {/* SCAN HISTORY BUTTON */}
+                <Button
+                  onClick={() => setShowHistory(!showHistory)}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <History className="w-4 h-4 mr-2" />
+                  Scan History ({scanHistory.length})
+                </Button>
+
                 {/* MANUAL BARCODE INPUT */}
                 <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm font-medium text-purple-900 mb-3">⌨️ Enter Barcode Manually:</p>
@@ -884,7 +961,7 @@ export const Scanner = () => {
                     <li>Scan barcode → Searches OpenFoodFacts</li>
                     <li>If ingredients missing → Use camera for OCR</li>
                     <li>OCR extracts ingredients automatically</li>
-                    <li>Review & save to database</li>
+                    <li>✨ Data saved to localStorage automatically</li>
                   </ol>
                 </div>
 
@@ -1049,6 +1126,64 @@ export const Scanner = () => {
 
           {/* RIGHT SIDE: Output Results */}
           <div className="space-y-4">
+            {/* HISTORY PANEL */}
+            {showHistory && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">Scan History</CardTitle>
+                      <CardDescription>All scans saved locally</CardDescription>
+                    </div>
+                    {scanHistory.length > 0 && (
+                      <Button
+                        onClick={() => {
+                          clearScanHistory()
+                          setScanHistory([])
+                        }}
+                        variant="destructive"
+                        size="sm"
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Clear All
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {scanHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">No scans yet. Start scanning!</p>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {scanHistory.map((scan: any) => (
+                        <div
+                          key={scan.id}
+                          onClick={() => loadPreviousScan(scan)}
+                          className="p-3 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{scan.name}</p>
+                              {scan.barcode && (
+                                <p className="text-xs text-gray-600 font-mono">{scan.barcode}</p>
+                              )}
+                              <p className="text-xs text-gray-500">
+                                {new Date(scan.timestamp).toLocaleDateString()} {new Date(scan.timestamp).toLocaleTimeString()}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-xs ml-2 flex-shrink-0">
+                              {scan.source}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* RESULTS CARD */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Results</CardTitle>
@@ -1214,7 +1349,7 @@ export const Scanner = () => {
                       {result.source === "ocr" && result.barcode && (
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                           <p className="text-xs text-blue-900">
-                            💾 <strong>Next step:</strong> Save this OCR data to your database to help other users!
+                            💾 <strong>Saved to localStorage:</strong> This OCR data persists across navigation!
                           </p>
                         </div>
                       )}
