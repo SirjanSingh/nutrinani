@@ -17,6 +17,7 @@ export interface OnboardingFormData {
   
   // Step 3: Allergies & Restrictions
   allergies: string[];
+  diseases?: string[]; // Health conditions
   other_restrictions?: string;
   
   // Completion status
@@ -82,6 +83,7 @@ export const INITIAL_ONBOARDING_DATA: OnboardingFormData = {
   favorite_foods: [],
   disliked_foods: [],
   allergies: [],
+  diseases: [],
   other_restrictions: '',
   onboarding_completed: false,
 };

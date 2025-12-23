@@ -1,307 +1,263 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import GenerateRecipe from "./GenerateRecipe";
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ALLERGY_OPTIONS, DIET_TYPE_OPTIONS, GENDER_OPTIONS, DISEASE_OPTIONS, type Gender, type DietType } from '@/types/onboarding';
-import { calculateAge, parseCommaSeparated } from '@/lib/onboarding';
-import { CheckCircle2, Loader2 } from 'lucide-react';
+import { calculateAge } from '@/lib/onboarding';
+import { 
+  Heart, 
+  Shield, 
+  Users, 
+  Sparkles, 
+  ChefHat, 
+  Scan, 
+  Bot,
+  Package,
+  ArrowRight,
+  Leaf,
+  Star
+} from 'lucide-react';
 
-export default function Dashboard() {
-  const { toast } = useToast();
+interface DashboardProps {
+  onNavigateToSection?: (section: string) => void;
+}
+
+export default function Dashboard({ onNavigateToSection }: DashboardProps) {
   const { user } = useAuth();
-  const { profile, isProfileLoading, saveProfile } = useProfile();
+  const { profile } = useProfile();
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const displayName = useMemo(() => {
+    return (profile?.name as string) || user?.name || user?.email || 'there';
+  }, [profile?.name, user?.name, user?.email]);
 
-  // Basic info
-  const [name, setName] = useState('');
-  const [dob, setDob] = useState('');
-  const [gender, setGender] = useState<Gender | ''>('');
+  const age = useMemo(() => {
+    const dob = profile?.dob as string;
+    return dob ? calculateAge(dob) : null;
+  }, [profile?.dob]);
 
-  // Food preferences
-  const [dietType, setDietType] = useState<DietType>('vegetarian');
-  const [favoriteFoodsText, setFavoriteFoodsText] = useState('');
-  const [dislikedFoodsText, setDislikedFoodsText] = useState('');
-
-  // Allergies & restrictions
-  const [allergies, setAllergies] = useState<string[]>([]);
-  const [otherRestrictions, setOtherRestrictions] = useState('');
-
-  // Health conditions
-  const [diseases, setDiseases] = useState<string[]>([]);
-
-  // Sync form from loaded profile
-  useEffect(() => {
-    const p = profile || {};
-    setName((p.name as string) || user?.name || '');
-    setDob((p.dob as string) || '');
-    setGender((p.gender as Gender) || '');
-    setDietType(((p.diet_type as DietType) || 'vegetarian') as DietType);
-    setFavoriteFoodsText(Array.isArray(p.favorite_foods) ? (p.favorite_foods as string[]).join(', ') : '');
-    setDislikedFoodsText(Array.isArray(p.disliked_foods) ? (p.disliked_foods as string[]).join(', ') : '');
-    setAllergies(Array.isArray(p.allergies) ? (p.allergies as string[]) : []);
-    setDiseases(Array.isArray(p.diseases) ? (p.diseases as string[]) : []);
-    setOtherRestrictions((p.other_restrictions as string) || '');
-  }, [profile, user?.name]);
-
-  const displayName = useMemo(() => name || user?.name || user?.email || 'there', [name, user?.name, user?.email]);
-  const age = useMemo(() => (dob ? calculateAge(dob) : 0), [dob]);
-
-  const toggleAllergy = (item: string) => {
-    setAllergies((prev) => (prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]));
-  };
-
-  const toggleDisease = (item: string) => {
-    setDiseases((prev) =>
-      prev.includes(item) ? prev.filter((x) => x !== item) : [...prev, item]
-    );
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await saveProfile({
-        name: name.trim(),
-        dob,
-        gender: (gender || undefined) as Gender | undefined,
-        diet_type: dietType,
-        favorite_foods: parseCommaSeparated(favoriteFoodsText),
-        disliked_foods: parseCommaSeparated(dislikedFoodsText),
-        allergies,
-        diseases,
-        other_restrictions: otherRestrictions,
-        onboarding_completed: true,
-      });
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-
-      toast({
-        title: 'Profile updated',
-        description: 'Your details were saved successfully.',
-      });
-    } catch (e: any) {
-      toast({
-        title: 'Save failed',
-        description: e?.message || 'Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const dietType = profile?.diet_type as string;
+  const allergies = (profile?.allergies as string[]) || [];
+  const diseases = (profile?.diseases as string[]) || [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-foreground mb-2">Welcome, {displayName}</h2>
-          <p className="text-muted-foreground">
-            Your profile powers safer label checks, better recipes, and personalized recommendations.
-          </p>
+    <div className="space-y-8">
+      {/* Welcome Header */}
+      <div className="text-center space-y-4">
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl">
+            <Leaf className="h-8 w-8 text-white" />
+          </div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+            Welcome to Nutrinani
+          </h1>
         </div>
+        <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+          Hello, <span className="font-semibold text-foreground">{displayName}</span>! 
+          Your AI-powered nutrition companion for safer, smarter food choices.
+        </p>
       </div>
 
-      <Card className="shadow-md border-border/50">
-        <CardHeader>
-          <CardTitle>Your profile</CardTitle>
-          <CardDescription>Everything is editable. Update anytime.</CardDescription>
+      {/* About Nutrinani */}
+      <Card className="border-2 border-green-100 bg-gradient-to-br from-green-50/50 to-emerald-50/50">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl flex items-center justify-center gap-2">
+            <Sparkles className="h-6 w-6 text-green-600" />
+            What is Nutrinani?
+          </CardTitle>
+          <CardDescription className="text-base">
+            Your personalized nutrition assistant powered by AI
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-8">
-          {/* Basic info */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Basic info</h3>
-              {isProfileLoading && (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading
-                </div>
-              )}
+        <CardContent className="space-y-6">
+          <p className="text-center text-muted-foreground leading-relaxed">
+            Nutrinani combines the wisdom of traditional nutrition knowledge with cutting-edge AI technology 
+            to help you make informed food choices. Whether you're scanning labels, discovering recipes, 
+            or managing your dietary needs, we're here to guide you every step of the way.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="text-center space-y-2 p-4 rounded-lg bg-white/50">
+              <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <Scan className="h-6 w-6 text-blue-600" />
+              </div>
+              <h3 className="font-semibold">Smart Scanning</h3>
+              <p className="text-sm text-muted-foreground">
+                Scan food labels and get instant safety verdicts
+              </p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full name</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
-                  className="rounded-xl"
-                />
+            
+            <div className="text-center space-y-2 p-4 rounded-lg bg-white/50">
+              <div className="mx-auto w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <ChefHat className="h-6 w-6 text-orange-600" />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="dob">Date of birth</Label>
-                <Input
-                  id="dob"
-                  type="date"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="rounded-xl"
-                />
-              </div>
+              <h3 className="font-semibold">Recipe Magic</h3>
+              <p className="text-sm text-muted-foreground">
+                Discover personalized recipes based on your preferences
+              </p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Age</Label>
-                <Input
-                  value={dob && age > 0 ? `${age} years` : ''}
-                  readOnly
-                  placeholder={dob ? '—' : 'Pick DOB to calculate'}
-                  className="rounded-xl bg-muted"
-                />
+            
+            <div className="text-center space-y-2 p-4 rounded-lg bg-white/50">
+              <div className="mx-auto w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                <Bot className="h-6 w-6 text-purple-600" />
               </div>
-              <div className="space-y-2">
-                <Label>Gender (optional)</Label>
-                <Select value={gender} onValueChange={(v) => setGender(v as Gender)}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GENDER_OPTIONS.map((g) => (
-                      <SelectItem key={g.value} value={g.value}>
-                        {g.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <h3 className="font-semibold">Nani Voice Bot</h3>
+              <p className="text-sm text-muted-foreground">
+                Chat with your AI nutrition grandmother
+              </p>
             </div>
-          </div>
-
-          {/* Food preferences */}
-          <div className="space-y-4">
-            <h3 className="font-semibold">Food preferences</h3>
-
-            <div className="space-y-2">
-              <Label>Diet type</Label>
-              <Select value={dietType} onValueChange={(v) => setDietType(v as DietType)}>
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder="Select your diet" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIET_TYPE_OPTIONS.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Favorite foods (optional)</Label>
-                <Input
-                  value={favoriteFoodsText}
-                  onChange={(e) => setFavoriteFoodsText(e.target.value)}
-                  placeholder="Paneer, dosa, pasta"
-                  className="rounded-xl"
-                />
+            
+            <div className="text-center space-y-2 p-4 rounded-lg bg-white/50">
+              <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <Package className="h-6 w-6 text-green-600" />
               </div>
-              <div className="space-y-2">
-                <Label>Disliked foods (optional)</Label>
-                <Input
-                  value={dislikedFoodsText}
-                  onChange={(e) => setDislikedFoodsText(e.target.value)}
-                  placeholder="Brinjal, bitter gourd"
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Allergies & restrictions */}
-          <div className="space-y-4">
-            <h3 className="font-semibold">Allergies & restrictions</h3>
-
-            <div className="space-y-3">
-              <Label>Food allergies (optional)</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {ALLERGY_OPTIONS.map((a) => {
-                  const checked = allergies.includes(a);
-                  return (
-                    <label
-                      key={a}
-                      className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleAllergy(a)} />
-                      <span className="text-sm">{a}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Other dietary restrictions (optional)</Label>
-              <Textarea
-                value={otherRestrictions}
-                onChange={(e) => setOtherRestrictions(e.target.value)}
-                placeholder="Low sugar, diabetic safe, lactose sensitive"
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-
-          {/* Health conditions */}
-          <div className="space-y-4">
-            <h3 className="font-semibold">Health conditions</h3>
-
-            <div className="space-y-3">
-              <Label>Diseases / medical conditions (optional)</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {DISEASE_OPTIONS.map((d) => {
-                  const checked = diseases.includes(d);
-                  return (
-                    <label
-                      key={d}
-                      className="flex items-center gap-3 border rounded-lg p-3 hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleDisease(d)} />
-                      <span className="text-sm">{d}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Helps us personalize food safety and nutrition advice
+              <h3 className="font-semibold">Smart Inventory</h3>
+              <p className="text-sm text-muted-foreground">
+                Track your pantry and get recipe suggestions
               </p>
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Save button */}
-          <div className="flex items-center gap-4">
-            <Button onClick={handleSave} size="lg" className="rounded-xl" disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
-                </>
-              ) : (
-                'Save changes'
+      {/* Your Profile Summary */}
+      {(profile?.name || age || dietType || allergies.length > 0) && (
+        <Card className="border-2 border-blue-100 bg-gradient-to-br from-blue-50/50 to-indigo-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Heart className="h-5 w-5 text-red-500" />
+              Your Nutrition Profile
+            </CardTitle>
+            <CardDescription>
+              Personalized just for you
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {age && (
+                <div className="text-center p-3 bg-white/50 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{age}</div>
+                  <div className="text-sm text-muted-foreground">Years Old</div>
+                </div>
               )}
-            </Button>
-            {saved && (
-              <div className="flex items-center gap-2 text-success">
-                <CheckCircle2 className="w-5 h-5" />
-                <span className="font-medium">Saved</span>
+              
+              {dietType && (
+                <div className="text-center p-3 bg-white/50 rounded-lg">
+                  <div className="text-lg font-semibold text-green-600 capitalize">{dietType.replace('_', ' ')}</div>
+                  <div className="text-sm text-muted-foreground">Diet Type</div>
+                </div>
+              )}
+              
+              {allergies.length > 0 && (
+                <div className="text-center p-3 bg-white/50 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600">{allergies.length}</div>
+                  <div className="text-sm text-muted-foreground">Allergies Tracked</div>
+                </div>
+              )}
+              
+              {diseases.length > 0 && (
+                <div className="text-center p-3 bg-white/50 rounded-lg">
+                  <div className="text-2xl font-bold text-purple-600">{diseases.length}</div>
+                  <div className="text-sm text-muted-foreground">Health Conditions</div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Star className="h-5 w-5 text-yellow-500" />
+            Quick Actions
+          </CardTitle>
+          <CardDescription>
+            Jump into your nutrition journey
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Button 
+              variant="outline" 
+              className="h-auto p-4 flex flex-col items-center gap-3 hover:bg-blue-50 hover:border-blue-200"
+              onClick={() => onNavigateToSection?.('scanner')}
+            >
+              <Scan className="h-8 w-8 text-blue-600" />
+              <div className="text-center">
+                <div className="font-semibold">Scan a Product</div>
+                <div className="text-sm text-muted-foreground">Get instant safety verdict</div>
               </div>
-            )}
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="h-auto p-4 flex flex-col items-center gap-3 hover:bg-orange-50 hover:border-orange-200"
+              onClick={() => onNavigateToSection?.('recipes')}
+            >
+              <ChefHat className="h-8 w-8 text-orange-600" />
+              <div className="text-center">
+                <div className="font-semibold">Find Recipes</div>
+                <div className="text-sm text-muted-foreground">Discover personalized meals</div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="h-auto p-4 flex flex-col items-center gap-3 hover:bg-purple-50 hover:border-purple-200"
+              onClick={() => onNavigateToSection?.('voice')}
+            >
+              <Bot className="h-8 w-8 text-purple-600" />
+              <div className="text-center">
+                <div className="font-semibold">Chat with Nani</div>
+                <div className="text-sm text-muted-foreground">Ask nutrition questions</div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Community & Safety */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="border-2 border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-green-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-emerald-600" />
+              Join Our Community
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-muted-foreground">
+              Connect with fellow nutrition enthusiasts, share recipes, and learn from each other's experiences.
+            </p>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => onNavigateToSection?.('community')}>
+              Explore Community
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+        
+        <Card className="border-2 border-red-100 bg-gradient-to-br from-red-50/50 to-pink-50/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5 text-red-600" />
+              Food Safety First
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-muted-foreground">
+              Our AI analyzes ingredients against your profile to ensure every meal is safe and suitable for you.
+            </p>
+            <Button variant="outline" className="w-full border-red-200 hover:bg-red-50">
+              Learn More
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

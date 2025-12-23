@@ -21,14 +21,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { LogOut } from 'lucide-react';
+import { LogOut, User, Settings } from 'lucide-react';
 
 function getInitial(nameOrEmail?: string) {
   const s = (nameOrEmail || '').trim();
   return s ? s[0]!.toUpperCase() : '?';
 }
 
-export function ProfileMenu() {
+export function ProfileMenu({ onEditProfile }: { onEditProfile?: () => void }) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { profile } = useProfile();
@@ -68,6 +68,11 @@ export function ProfileMenu() {
               )}
             </div>
           </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onEditProfile} className="cursor-pointer">
+            <User className="mr-2 h-4 w-4" />
+            Edit Profile
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => setConfirmOpen(true)}
