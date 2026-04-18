@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1032.0",
     "@aws-sdk/client-dynamodb": "^3.857.0",
     "@aws-sdk/lib-dynamodb": "^3.857.0"
   }

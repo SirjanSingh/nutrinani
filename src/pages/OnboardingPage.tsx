@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { OnboardingProgress } from '@/components/onboarding/OnboardingProgress';
-import { OnboardingStep1 } from '@/components/onboarding/OnboardingStep1';
-import { OnboardingStep2 } from '@/components/onboarding/OnboardingStep2';
-import { OnboardingStep3 } from '@/components/onboarding/OnboardingStep3';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import { useProfile } from '@/contexts/ProfileContext';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { OnboardingProgress } from "@/components/onboarding/OnboardingProgress";
+import { OnboardingStep1 } from "@/components/onboarding/OnboardingStep1";
+import { OnboardingStep2 } from "@/components/onboarding/OnboardingStep2";
+import { OnboardingStep3 } from "@/components/onboarding/OnboardingStep3";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import {
   validateStep1,
   validateStep2,
@@ -16,10 +16,13 @@ import {
   saveOnboardingToSession,
   loadOnboardingFromSession,
   clearOnboardingSession,
-} from '@/lib/onboarding';
-import { INITIAL_ONBOARDING_DATA, type OnboardingFormData } from '@/types/onboarding';
-import logo from '@/assets/nutrinani-logo.png';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+} from "@/lib/onboarding";
+import {
+  INITIAL_ONBOARDING_DATA,
+  type OnboardingFormData,
+} from "@/types/onboarding";
+import logo from "@/assets/nutrinani-logo.png";
+import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 
 const TOTAL_STEPS = 3;
 
@@ -27,10 +30,12 @@ export default function OnboardingPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { profile, saveProfile } = useProfile();
+  const { profile, saveProfile, isProfileLoading } = useProfile();
   const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<Partial<OnboardingFormData>>(INITIAL_ONBOARDING_DATA);
-  const [errors, setErrors] = useState<any>({});
+  const [formData, setFormData] = useState<Partial<OnboardingFormData>>(
+    INITIAL_ONBOARDING_DATA
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load saved data from session storage on mount
@@ -93,27 +98,29 @@ export default function OnboardingPage() {
       });
 
       await saveProfile(submissionData);
-      console.log('Onboarding data submitted:', submissionData);
+      console.log("Onboarding data submitted:", submissionData);
 
       // Clear session storage
       clearOnboardingSession();
 
       // Show success message
       toast({
-        title: completed ? 'Profile setup complete!' : 'Setup skipped',
-        description: completed 
-          ? 'Your profile has been saved successfully.'
-          : 'You can complete your profile anytime from settings.',
+        title: completed ? "Profile setup complete!" : "Setup skipped",
+        description: completed
+          ? "Your profile has been saved successfully."
+          : "You can complete your profile anytime from settings.",
       });
 
-      // Redirect to dashboard
-      navigate('/');
-    } catch (error: any) {
-      console.error('Onboarding submission error:', error);
+      // Redirect to profile selection
+      navigate("/profiles");
+    } catch (error: unknown) {
+      console.error("Onboarding submission error:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Please try again.";
       toast({
-        title: 'Submission failed',
-        description: error.message || 'Please try again.',
-        variant: 'destructive',
+        title: "Submission failed",
+        description: errorMessage,
+        variant: "destructive",
       });
     } finally {
       setIsSubmitting(false);
@@ -124,28 +131,45 @@ export default function OnboardingPage() {
   const handleSkip = () => handleSubmit(false);
   // Prefill from saved profile (if any) and Cognito name
   useEffect(() => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       ...(profile || {}),
-      name: prev.name || (profile?.name as string) || user?.name || '',
+      name: prev.name || (profile?.name as string) || user?.name || "",
     }));
   }, [profile, user?.name]);
+
+  // Redirect to profile selection if no active profile
+  const { activeProfile } = useProfile();
+  useEffect(() => {
+    if (!isProfileLoading && !activeProfile) {
+      navigate("/profiles");
+    }
+  }, [activeProfile, isProfileLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img src={logo} alt="NutriNani Logo" className="w-20 h-20 mx-auto mb-4 rounded-full shadow-lg" />
+          <img
+            src={logo}
+            alt="NutriNani Logo"
+            className="w-20 h-20 mx-auto mb-4 rounded-full shadow-lg"
+          />
           <h1 className="text-3xl font-bold mb-1">
-            <span style={{ color: '#6DAA33' }}>Nutri</span>
-            <span style={{ color: '#C86A3B' }}>Nani</span>
+            <span className="text-green-600">Nutri</span>
+            <span className="text-orange-600">Nani</span>
           </h1>
-          <p className="text-muted-foreground">Let's personalize your experience</p>
+          <p className="text-muted-foreground">
+            Let's personalize your experience
+          </p>
         </div>
 
         {/* Progress Indicator */}
-        <OnboardingProgress currentStep={currentStep} totalSteps={TOTAL_STEPS} />
+        <OnboardingProgress
+          currentStep={currentStep}
+          totalSteps={TOTAL_STEPS}
+        />
 
         {/* Form Card */}
         <Card className="shadow-xl border-0">
@@ -166,10 +190,7 @@ export default function OnboardingPage() {
               />
             )}
             {currentStep === 3 && (
-              <OnboardingStep3
-                data={formData}
-                onChange={handleDataChange}
-              />
+              <OnboardingStep3 data={formData} onChange={handleDataChange} />
             )}
 
             {/* Navigation Buttons */}
@@ -221,7 +242,7 @@ export default function OnboardingPage() {
                         Saving...
                       </>
                     ) : (
-                      'Complete setup'
+                      "Complete setup"
                     )}
                   </Button>
                 </>

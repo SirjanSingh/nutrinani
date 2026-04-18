@@ -1,73 +1,124 @@
-# Welcome to your Lovable project
+# NutriNani - Decoding Labels for a Healthier You
 
-## Project info
+A healthcare & wellness GenAI app that helps you scan food labels, get personalized verdicts, safe recipes, and trusted health advice.
 
-**URL**: https://lovable.dev/projects/8ae94e64-0e7a-4f61-9954-098452c30073
+## Features
 
-## How can I edit this code?
+- 🔍 **Food Label Scanner** - Scan and analyze food labels instantly
+- 👥 **Family Profiles** - Netflix-style multiple profiles for family members
+- 🍽️ **Personalized Recommendations** - Based on dietary preferences and health conditions
+- 🥗 **Safe Recipes** - Get recipes tailored to your allergies and restrictions
+- 💊 **Health Advice** - Ask Nani for trusted home remedies and health tips
+- 📱 **Voice Bot** - Interactive voice assistant for health queries
 
-There are several ways of editing your application.
+## Tech Stack
 
-**Use Lovable**
+- **Frontend**: React + TypeScript + Vite
+- **UI**: Tailwind CSS + Radix UI + shadcn/ui
+- **Backend**: AWS Lambda + DynamoDB
+- **Authentication**: AWS Cognito
+- **API**: AWS API Gateway
+- **Deployment**: AWS SAM
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/8ae94e64-0e7a-4f61-9954-098452c30073) and start prompting.
+## Getting Started
 
-Changes made via Lovable will be committed automatically to this repo.
+### Prerequisites
 
-**Use your preferred IDE**
+- Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- AWS CLI configured (for backend deployment)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Installation
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+1. Clone the repository
 
-Follow these steps:
+```bash
+git clone <your-repo-url>
+cd nutrinani
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+2. Install dependencies
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+```bash
+npm install
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
+3. Set up environment variables
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+cp .env.example .env
+# Edit .env with your AWS Cognito and API details
+```
+
+4. Start the development server
+
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The app will be available at `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Backend Setup
 
-**Use GitHub Codespaces**
+1. Navigate to the backend directory
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+cd backend/inventory-api
+```
 
-## What technologies are used for this project?
+2. Deploy using AWS SAM
 
-This project is built with:
+```bash
+sam build
+sam deploy --guided
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+3. Update your `.env` file with the deployed API URL
 
-## How can I deploy this project?
+## Project Structure
 
-Simply open [Lovable](https://lovable.dev/projects/8ae94e64-0e7a-4f61-9954-098452c30073) and click on Share -> Publish.
+```
+nutrinani/
+├── src/
+│   ├── components/     # Reusable UI components
+│   ├── contexts/       # React contexts (Auth, ZProfile)
+│   ├── hooks/          # Custom React hooks
+│   ├── lib/            # Utility functions
+│   ├── pages/          # Page components
+│   ├── services/       # API services
+│   └── types/          # TypeScript type definitions
+├── backend/
+│   └── inventory-api/  # AWS Lambda functions
+└── public/             # Static assets
+```
 
-## Can I connect a custom domain to my Lovable project?
+## Available Scripts
 
-Yes, you can!
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Family Profiles Feature
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+NutriNani supports Netflix-style family profiles:
+
+- **Multiple Profiles**: Up to 6 family members per account
+- **Individual Preferences**: Each profile has separate dietary preferences, allergies, and restrictions
+- **Profile Management**: Easy switching, editing, and management of family profiles
+- **Personalized Experience**: Tailored recommendations for each family member
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For support, email support@nutrinani.com or create an issue in this repository.

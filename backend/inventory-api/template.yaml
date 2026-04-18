@@ -1,4 +1,4 @@
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: NutriNani Inventory API (Lambda + DynamoDB + Cognito authorizer)
 
@@ -6,6 +6,9 @@ Parameters:
   InventoryTableName:
     Type: String
     Default: NutriNaniInventory
+  UserProfilesTableName:
+    Type: String
+    Default: NutriNaniUserProfilesV2
   UserPoolId:
     Type: String
     Description: Cognito User Pool ID (e.g. ap-southeast-2_XXXX)
@@ -36,6 +39,22 @@ Resources:
         - AttributeName: itemId
           KeyType: RANGE
 
+  UserProfilesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref UserProfilesTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: profileId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH # Partition Key
+        - AttributeName: profileId
+          KeyType: RANGE # Sort Key
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -50,7 +69,7 @@ Resources:
           - DELETE
           - OPTIONS
         AllowOrigins:
-          - '*'
+          - "*"
       Auth:
         DefaultAuthorizer: CognitoJwt
         Authorizers:
@@ -69,9 +88,12 @@ Resources:
       Environment:
         Variables:
           INVENTORY_TABLE_NAME: !Ref InventoryTableName
+          USER_PROFILES_TABLE_NAME: !Ref UserProfilesTableName
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref InventoryTableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserProfilesTableName
       Events:
         ListInventory:
           Type: HttpApi
@@ -97,6 +119,44 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /inventory/{id}
             Method: DELETE
+        # User Profile endpoints
+        ListProfiles:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profiles
+            Method: GET
+        CreateProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profiles
+            Method: POST
+        UpdateProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profiles/{id}
+            Method: PUT
+        DeleteProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /profiles/{id}
+            Method: DELETE
+        # Legacy user profile endpoint (for backward compatibility)
+        GetUserProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /me
+            Method: GET
+        UpdateUserProfile:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /me
+            Method: PUT
 
 Outputs:
   ApiUrl:

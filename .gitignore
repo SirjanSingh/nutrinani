@@ -25,6 +25,8 @@ dist-ssr
 
 
 .env
+env
+*.zip
 1git.zip
 ACTION_REQUIRED.md
 COGNITO_SETUP.md

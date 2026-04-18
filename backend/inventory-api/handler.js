@@ -24,6 +24,7 @@ const {
 } = require('@aws-sdk/lib-dynamodb');
 
 const TABLE_NAME = process.env.INVENTORY_TABLE_NAME;
+const USER_PROFILES_TABLE_NAME = process.env.USER_PROFILES_TABLE_NAME;
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -58,8 +59,21 @@ function getRouteKey(event) {
   // HTTP API provides routeKey, REST API provides httpMethod + resource/path
   if (event?.routeKey) return event.routeKey;
   const method = event?.httpMethod || 'GET';
-  // Normalize path to match our 2 routes
+  // Normalize path to match our routes
   const rawPath = event?.path || event?.rawPath || '/';
+  
+  // Profile routes
+  if (rawPath === '/profiles') {
+    return `${method} /profiles`;
+  }
+  if (rawPath.startsWith('/profiles/') && rawPath.split('/').length >= 3) {
+    return `${method} /profiles/{id}`;
+  }
+  if (rawPath === '/me') {
+    return `${method} /me`;
+  }
+  
+  // Inventory routes
   if (rawPath.startsWith('/inventory/') && rawPath.split('/').length >= 3) {
     return `${method} /inventory/{id}`;
   }
@@ -77,8 +91,10 @@ function getIdFromPath(event) {
   if (event?.pathParameters?.id) return String(event.pathParameters.id);
   const rawPath = event?.path || event?.rawPath || '';
   const parts = rawPath.split('/').filter(Boolean);
-  // /inventory/{id}
-  if (parts.length >= 2 && parts[0] === 'inventory') return decodeURIComponent(parts[1]);
+  // /inventory/{id} or /profiles/{id}
+  if (parts.length >= 2 && (parts[0] === 'inventory' || parts[0] === 'profiles')) {
+    return decodeURIComponent(parts[1]);
+  }
   return null;
 }
 
@@ -96,6 +112,9 @@ exports.handler = async (event) => {
   if (!TABLE_NAME) {
     return json(500, { error: 'INVENTORY_TABLE_NAME is not set' });
   }
+  if (!USER_PROFILES_TABLE_NAME) {
+    return json(500, { error: 'USER_PROFILES_TABLE_NAME is not set' });
+  }
 
   // Preflight
   if (event?.httpMethod === 'OPTIONS' || event?.routeKey === 'OPTIONS /{proxy+}') {
@@ -110,6 +129,257 @@ exports.handler = async (event) => {
   const routeKey = getRouteKey(event);
 
   try {
+    // === PROFILE ROUTES ===
+    
+    // GET /profiles - List all family profiles for user
+    if (routeKey === 'GET /profiles') {
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          KeyConditionExpression: '#pk = :pk',
+          ExpressionAttributeNames: { '#pk': 'userId' },
+          ExpressionAttributeValues: { ':pk': userId },
+          ScanIndexForward: false,
+        })
+      );
+
+      const profiles = (out.Items || []).map((item) => ({
+        id: item.profileId,
+        name: item.name,
+        age: item.age,
+        avatar: item.avatar,
+        isMain: item.isMain || false,
+        createdAt: item.createdAt,
+        onboardingData: item.onboardingData || {},
+      }));
+
+      return json(200, profiles);
+    }
+
+    // POST /profiles - Create new family profile
+    if (routeKey === 'POST /profiles') {
+      const body = event?.body ? JSON.parse(event.body) : {};
+      const name = (body?.name || '').toString().trim();
+      if (!name) return json(400, { error: 'name is required' });
+
+      const profileId = newItemId();
+      const createdAt = nowIso();
+
+      // Check if this is the first profile (make it main)
+      const existingProfiles = await ddb.send(
+        new QueryCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          KeyConditionExpression: '#pk = :pk',
+          ExpressionAttributeNames: { '#pk': 'userId' },
+          ExpressionAttributeValues: { ':pk': userId },
+          Select: 'COUNT',
+        })
+      );
+
+      const isMain = (existingProfiles.Count || 0) === 0;
+
+      const profile = {
+        userId,
+        profileId,
+        name,
+        age: body.age,
+        avatar: body.avatar || '👤',
+        isMain,
+        createdAt,
+        updatedAt: createdAt,
+        onboardingData: body.onboardingData || {
+          name,
+          onboarding_completed: false,
+        },
+      };
+
+      await ddb.send(
+        new PutCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          Item: profile,
+          ConditionExpression: 'attribute_not_exists(userId) AND attribute_not_exists(profileId)',
+        })
+      );
+
+      return json(201, {
+        id: profileId,
+        name: profile.name,
+        age: profile.age,
+        avatar: profile.avatar,
+        isMain: profile.isMain,
+        createdAt: profile.createdAt,
+        onboardingData: profile.onboardingData,
+      });
+    }
+
+    // PUT /profiles/{id} - Update family profile
+    if (routeKey === 'PUT /profiles/{id}') {
+      const id = getIdFromPath(event);
+      if (!id) return json(400, { error: 'Missing profile id' });
+      const body = event?.body ? JSON.parse(event.body) : {};
+
+      // Allow updating profile fields
+      const allowed = ['name', 'age', 'avatar', 'onboardingData'];
+      const updates = {};
+      for (const k of allowed) {
+        if (Object.prototype.hasOwnProperty.call(body, k)) updates[k] = body[k];
+      }
+      if (Object.keys(updates).length === 0) {
+        return json(400, { error: 'No updatable fields provided' });
+      }
+
+      const exprNames = { '#updatedAt': 'updatedAt' };
+      const exprValues = { ':updatedAt': nowIso() };
+
+      let updateExpr = 'SET #updatedAt = :updatedAt';
+      let i = 0;
+      for (const [k, v] of Object.entries(updates)) {
+        i += 1;
+        const nk = `#k${i}`;
+        const vk = `:v${i}`;
+        exprNames[nk] = k;
+        exprValues[vk] = v;
+        updateExpr += `, ${nk} = ${vk}`;
+      }
+
+      const out = await ddb.send(
+        new UpdateCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          Key: { userId, profileId: id },
+          UpdateExpression: updateExpr,
+          ExpressionAttributeNames: exprNames,
+          ExpressionAttributeValues: exprValues,
+          ConditionExpression: 'attribute_exists(userId) AND attribute_exists(profileId)',
+          ReturnValues: 'ALL_NEW',
+        })
+      );
+
+      const item = out.Attributes;
+      return json(200, {
+        id: item.profileId,
+        name: item.name,
+        age: item.age,
+        avatar: item.avatar,
+        isMain: item.isMain,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        onboardingData: item.onboardingData,
+      });
+    }
+
+    // DELETE /profiles/{id} - Delete family profile
+    if (routeKey === 'DELETE /profiles/{id}') {
+      const id = getIdFromPath(event);
+      if (!id) return json(400, { error: 'Missing profile id' });
+
+      // Check if it's the main profile
+      const profileCheck = await ddb.send(
+        new QueryCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          KeyConditionExpression: '#pk = :pk AND #sk = :sk',
+          ExpressionAttributeNames: { '#pk': 'userId', '#sk': 'profileId' },
+          ExpressionAttributeValues: { ':pk': userId, ':sk': id },
+        })
+      );
+
+      const profile = profileCheck.Items?.[0];
+      if (profile?.isMain) {
+        return json(400, { error: 'Cannot delete main profile' });
+      }
+
+      await ddb.send(
+        new DeleteCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          Key: { userId, profileId: id },
+          ConditionExpression: 'attribute_exists(userId) AND attribute_exists(profileId)',
+        })
+      );
+
+      return json(200, { ok: true });
+    }
+
+    // GET /me - Legacy endpoint for backward compatibility
+    if (routeKey === 'GET /me') {
+      // Try to get the main profile first
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          KeyConditionExpression: '#pk = :pk',
+          ExpressionAttributeNames: { '#pk': 'userId' },
+          ExpressionAttributeValues: { ':pk': userId },
+          FilterExpression: 'isMain = :isMain',
+          ExpressionAttributeValues: { ':pk': userId, ':isMain': true },
+        })
+      );
+
+      const mainProfile = out.Items?.[0];
+      if (mainProfile) {
+        return json(200, mainProfile.onboardingData || {});
+      }
+
+      // If no main profile, return empty profile
+      return json(200, { name: '', onboarding_completed: false });
+    }
+
+    // PUT /me - Legacy endpoint for backward compatibility
+    if (routeKey === 'PUT /me') {
+      const body = event?.body ? JSON.parse(event.body) : {};
+      
+      // Try to find main profile
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: USER_PROFILES_TABLE_NAME,
+          KeyConditionExpression: '#pk = :pk',
+          ExpressionAttributeNames: { '#pk': 'userId' },
+          ExpressionAttributeValues: { ':pk': userId },
+          FilterExpression: 'isMain = :isMain',
+          ExpressionAttributeValues: { ':pk': userId, ':isMain': true },
+        })
+      );
+
+      let mainProfile = out.Items?.[0];
+      
+      if (!mainProfile) {
+        // Create a main profile if it doesn't exist
+        const profileId = newItemId();
+        const createdAt = nowIso();
+        
+        mainProfile = {
+          userId,
+          profileId,
+          name: body.name || 'Me',
+          avatar: '👤',
+          isMain: true,
+          createdAt,
+          updatedAt: createdAt,
+          onboardingData: body,
+        };
+
+        await ddb.send(
+          new PutCommand({
+            TableName: USER_PROFILES_TABLE_NAME,
+            Item: mainProfile,
+          })
+        );
+      } else {
+        // Update existing main profile
+        await ddb.send(
+          new UpdateCommand({
+            TableName: USER_PROFILES_TABLE_NAME,
+            Key: { userId, profileId: mainProfile.profileId },
+            UpdateExpression: 'SET onboardingData = :data, updatedAt = :updatedAt',
+            ExpressionAttributeValues: {
+              ':data': { ...mainProfile.onboardingData, ...body },
+              ':updatedAt': nowIso(),
+            },
+          })
+        );
+      }
+
+      return json(200, { ...mainProfile.onboardingData, ...body });
+    }
+
+    // === INVENTORY ROUTES (existing) ===
     // GET /inventory
     if (routeKey === 'GET /inventory') {
       const out = await ddb.send(

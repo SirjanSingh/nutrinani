@@ -9,6 +9,9 @@ import { AuthGate } from "@/components/AuthGate";
 import { SystemBanner } from "@/components/SystemBanner";
 import Index from "./pages/Index";
 import OnboardingPage from "./pages/OnboardingPage";
+import ProfileSelectionPage from "./pages/ProfileSelectionPage";
+import ManageProfilesPage from "./pages/ManageProfilesPage";
+import EditProfilePage from "./pages/EditProfilePage";
 import NotFound from "./pages/NotFound";
 import GenerateRecipe from "./components/GenerateRecipe";
 
@@ -23,8 +26,46 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <Routes>
-              <Route path="/onboarding" element={<AuthGate><OnboardingPage /></AuthGate>} />
-              <Route path="/" element={<AuthGate><Index /></AuthGate>} />
+              <Route
+                path="/profiles"
+                element={
+                  <AuthGate>
+                    <ProfileSelectionPage />
+                  </AuthGate>
+                }
+              />
+              <Route
+                path="/manage-profiles"
+                element={
+                  <AuthGate>
+                    <ManageProfilesPage />
+                  </AuthGate>
+                }
+              />
+              <Route
+                path="/profiles/:id/edit"
+                element={
+                  <AuthGate>
+                    <EditProfilePage />
+                  </AuthGate>
+                }
+              />
+              <Route
+                path="/onboarding"
+                element={
+                  <AuthGate>
+                    <OnboardingPage />
+                  </AuthGate>
+                }
+              />
+              <Route
+                path="/"
+                element={
+                  <AuthGate>
+                    <Index />
+                  </AuthGate>
+                }
+              />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

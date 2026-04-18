@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import Dashboard from "@/components/Dashboard";
 import EditProfile from "@/components/EditProfile";
@@ -7,16 +8,30 @@ import Recipes from "@/components/Recipes";
 import { VoiceBot } from "@/components/VoiceBot";
 import { Inventory } from "@/components/Inventory";
 import { Community } from "@/components/Community";
-import { ProfileMenu } from "@/components/ProfileMenu";
+import { ProfileHeader } from "@/components/ProfileHeader";
+import { ChatBot } from "@/components/ChatBot";
+import { useProfile } from "@/contexts/ProfileContext";
 
-export type Section = "dashboard" | "scanner" | "recipes" | "voice" | "inventory" | "community" | "editProfile";
+export type Section =
+  | "dashboard"
+  | "scanner"
+  | "recipes"
+  | "voice"
+  | "inventory"
+  | "community"
+  | "chat"
+  | "editProfile";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { activeProfile, isProfileLoading } = useProfile();
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
 
-  const handleEditProfile = () => {
-    setActiveSection("editProfile");
-  };
+  useEffect(() => {
+    if (!isProfileLoading && !activeProfile) {
+      navigate("/profiles");
+    }
+  }, [activeProfile, isProfileLoading, navigate]);
 
   const handleBackToDashboard = () => {
     setActiveSection("dashboard");
@@ -24,13 +39,16 @@ const Index = () => {
 
   return (
     <div className="flex min-h-screen w-full bg-background">
-      <Sidebar activeSection={activeSection} setActiveSection={setActiveSection} />
-      
+      <Sidebar
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+      />
+
       <main className="flex-1 overflow-auto">
         {/* Top bar */}
         <div className="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border/50">
           <div className="container mx-auto max-w-7xl px-6 md:px-8 lg:px-12 py-4 flex items-center justify-end">
-            <ProfileMenu onEditProfile={handleEditProfile} />
+            <ProfileHeader />
           </div>
         </div>
 
@@ -39,8 +57,13 @@ const Index = () => {
           {activeSection === "editProfile" && <EditProfile onBack={handleBackToDashboard} />}
           {activeSection === "scanner" && <Scanner />}
           {activeSection === "recipes" && <Recipes />}
-          {activeSection === "inventory" && <Inventory onNavigateToRecipes={() => setActiveSection("recipes")} />}
+          {activeSection === "inventory" && (
+            <Inventory
+              onNavigateToRecipes={() => setActiveSection("recipes")}
+            />
+          )}
           {activeSection === "community" && <Community />}
+          {activeSection === "chat" && <ChatBot />}
           {activeSection === "voice" && <VoiceBot />}
         </div>
       </main>

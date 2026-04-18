@@ -1,4 +1,4 @@
-import { LayoutDashboard, ScanBarcode, ChefHat, Mic, Package, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, ScanBarcode, ChefHat, Mic, Package, Users, LogOut, MessageSquare } from "lucide-react";
 import { Section } from "@/pages/Index";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ const navItems = [
   { id: "recipes" as Section, label: "Recipes & List", icon: ChefHat },
   { id: "inventory" as Section, label: "Inventory", icon: Package },
   { id: "community" as Section, label: "Community", icon: Users },
+  { id: "chat" as Section, label: "Nani Chat", icon: MessageSquare },
   { id: "voice" as Section, label: "Nani Voice Bot", icon: Mic },
 ];
 
