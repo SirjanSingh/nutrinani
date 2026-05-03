@@ -11,8 +11,7 @@ import { useProfile } from "@/contexts/ProfileContext"
 import { useAuth } from "@/contexts/AuthContext"
 
 /* ================= CONFIG ================= */
-const SCANNER_API = "https://ubav5knsp8.execute-api.ap-south-1.amazonaws.com"  // ap-south-1
-const RECIPE_API = "https://tfn02c762l.execute-api.ap-southeast-2.amazonaws.com"  // ap-southeast-2
+const OPEN_FOOD_FACTS_API = "https://world.openfoodfacts.org/api/v2/product"
 const STORAGE_KEY = "scan_history"
 
 /* ================= ZXING READER ================= */
@@ -650,84 +649,120 @@ export const Scanner = () => {
     }
   }
 
-  /* ================= BACKEND WITH OCR FALLBACK ================= */
+  /* ================= OPENFOODFACTS LOOKUP (no backend required) ================= */
   const fetchScanResult = async (barcode: string) => {
     try {
-      console.log("📡 Fetching product from API:", barcode)
-      setProcessingStep("Searching database...")
+      console.log("📡 Fetching product from OpenFoodFacts:", barcode)
+      setProcessingStep("Searching OpenFoodFacts database...")
 
-      const res = await fetch(`${SCANNER_API}/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barcode }),
-      })
+      // 10-second timeout so it never hangs indefinitely
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000)
+
+      const res = await fetch(
+        `${OPEN_FOOD_FACTS_API}/${barcode}.json?fields=product_name,ingredients_text,ingredients_text_en,ingredients,labels_tags,categories_tags`,
+        { signal: controller.signal }
+      )
+      clearTimeout(timeoutId)
 
       const data = await res.json()
-      console.log("📡 API Response:", data)
+      console.log("📡 OpenFoodFacts Response status:", data.status)
 
-      if (!res.ok) {
-        throw new Error(`API error ${res.status}`)
-      }
+      if (data.status === 1 && data.product) {
+        const product = data.product
 
-      const hasIngredients =
-        data.product?.ingredients_en?.length > 0 ||
-        data.product?.ingredients_hi?.length > 0 ||
-        (data.product?.rawIngredientsText && data.product.rawIngredientsText.length > 10)
+        // Prefer English ingredients text, fall back to generic
+        const rawText: string =
+          product.ingredients_text_en ||
+          product.ingredients_text ||
+          ""
 
-      if (data.success && data.product && hasIngredients) {
-        setProcessingStep("")
-        
-        const foundWarnings = checkIngredients(
-          data.product.ingredients_en || [],
-          data.product.ingredients_hi || []
-        )
-        setWarnings(foundWarnings)
+        // Parse ingredient names from the comma-separated text
+        const ingredients_en: string[] = rawText
+          .replace(/_/g, " ")
+          .split(/[,;]+/)
+          .map((s: string) => s.replace(/\([^)]*\)/g, "").trim()) // strip parenthetical %
+          .filter((s: string) => s.length > 1 && /[a-zA-Z]/.test(s))
+          .slice(0, 60)
 
-        const resultData = {
-          name: data.product.name || "Unknown Product",
-          ingredients_en: data.product.ingredients_en || [],
-          ingredients_hi: data.product.ingredients_hi || [],
-          rawIngredientsText: data.product.rawIngredientsText || "",
-          source: data.source || "database",
-          barcode: barcode,
-          verdict: {
-            description: `✅ Found in ${data.source}. Contains ${data.product.ingredients_en?.length || 0} ingredients.`,
-            riskScore: foundWarnings.length > 0 ? 80 : 0,
-          },
+        // Also extract from structured ingredients array if text is sparse
+        if (ingredients_en.length === 0 && Array.isArray(product.ingredients)) {
+          product.ingredients.forEach((ing: any) => {
+            if (ing.text) ingredients_en.push(ing.text)
+          })
         }
 
-        setResult(resultData)
-        saveScanToHistory(resultData)
-        const updated = getScanHistory()
-        setScanHistory(updated)
-      } else {
-        console.log("⚠️ Ingredients missing - need OCR")
+        const hasIngredients = ingredients_en.length > 0 || rawText.length > 5
+
         setProcessingStep("")
-        
+
+        if (hasIngredients) {
+          const foundWarnings = checkIngredients(ingredients_en, [])
+          setWarnings(foundWarnings)
+
+          const resultData = {
+            name: product.product_name || `Product ${barcode}`,
+            ingredients_en,
+            ingredients_hi: [],
+            rawIngredientsText: rawText,
+            source: "OpenFoodFacts",
+            barcode,
+            verdict: {
+              description: `✅ Found on OpenFoodFacts. Contains ${ingredients_en.length} ingredients.`,
+              riskScore: foundWarnings.length > 0 ? 80 : 0,
+            },
+          }
+          setResult(resultData)
+          saveScanToHistory(resultData)
+          setScanHistory(getScanHistory())
+        } else {
+          // Product exists but no ingredient data
+          const resultData = {
+            name: product.product_name || `Barcode: ${barcode}`,
+            ingredients_en: [],
+            ingredients_hi: [],
+            rawIngredientsText: "",
+            source: "incomplete",
+            needsOCR: true,
+            barcode,
+            verdict: {
+              description:
+                "⚠️ Product found but ingredient data is missing. Upload a clear photo of the ingredient label for OCR analysis.",
+              riskScore: 0,
+            },
+          }
+          setResult(resultData)
+          saveScanToHistory(resultData)
+          setScanHistory(getScanHistory())
+        }
+      } else {
+        // Product not in OpenFoodFacts
+        console.log("⚠️ Product not found in OpenFoodFacts")
+        setProcessingStep("")
+
         const resultData = {
-          name: data.product?.name || `Barcode: ${barcode}`,
+          name: `Barcode: ${barcode}`,
           ingredients_en: [],
           ingredients_hi: [],
           rawIngredientsText: "",
-          source: "incomplete",
+          source: "not_found",
           needsOCR: true,
-          barcode: barcode,
+          barcode,
           verdict: {
             description:
-              "⚠️ Ingredients not available in database. Upload a clear image of the ingredients list for OCR analysis.",
+              "⚠️ Product not found in OpenFoodFacts database. Upload the ingredient label image below for OCR analysis.",
             riskScore: 0,
           },
         }
-
         setResult(resultData)
         saveScanToHistory(resultData)
-        const updated = getScanHistory()
-        setScanHistory(updated)
+        setScanHistory(getScanHistory())
       }
     } catch (err: any) {
-      console.error("❌ API Error:", err)
+      console.error("❌ OpenFoodFacts Error:", err)
       setProcessingStep("")
-      
+
+      const isTimeout = err.name === "AbortError"
       const resultData = {
         name: `Barcode: ${barcode}`,
         ingredients_en: [],
@@ -735,17 +770,17 @@ export const Scanner = () => {
         rawIngredientsText: "",
         source: "error",
         needsOCR: true,
-        barcode: barcode,
+        barcode,
         verdict: {
-          description: `⚠️ Could not fetch from database: ${err.message}. Upload ingredients image for OCR.`,
+          description: isTimeout
+            ? "⚠️ Request timed out. Please check your internet connection or upload the ingredient label image for OCR."
+            : `⚠️ Could not fetch product data: ${err.message}. Upload the ingredient label image for OCR.`,
           riskScore: 0,
         },
       }
-
       setResult(resultData)
       saveScanToHistory(resultData)
-      const updated = getScanHistory()
-      setScanHistory(updated)
+      setScanHistory(getScanHistory())
     }
   }
 

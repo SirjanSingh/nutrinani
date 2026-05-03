@@ -15,6 +15,144 @@ import { generateRecipe } from "@/services/recipeApi";
 import { useProfile } from "@/contexts/ProfileContext";
 import { Loader2, ChefHat, Clock, Users, BookOpen, ImageIcon, ArrowRight, ArrowDown } from "lucide-react";
 
+// ─── Health Score Engine ──────────────────────────────────────────────────────
+type HealthScore = { label: string; emoji: string; score: number; color: string };
+
+const INGREDIENT_KEYWORDS: Record<string, { bad: string[]; good?: string[] }> = {
+  diabeticSafe: {
+    bad: ["sugar", "syrup", "honey", "molasses", "corn starch", "white rice", "white bread",
+          "refined flour", "maida", "candy", "jaggery", "glucose", "fructose", "maltose",
+          "condensed milk", "ice cream", "chocolate"],
+  },
+  lowSugar: {
+    bad: ["sugar", "syrup", "honey", "jaggery", "candy", "sweetener", "molasses",
+          "condensed milk", "jam", "marmalade", "ketchup", "bbq sauce"],
+  },
+  vegan: {
+    bad: ["chicken", "beef", "pork", "lamb", "mutton", "fish", "salmon", "tuna", "shrimp",
+          "prawn", "egg", "eggs", "milk", "cream", "butter", "cheese", "paneer", "ghee",
+          "yogurt", "curd", "whey", "honey", "gelatin", "lard", "bacon"],
+  },
+  vegetarian: {
+    bad: ["chicken", "beef", "pork", "lamb", "mutton", "fish", "salmon", "tuna", "shrimp",
+          "prawn", "gelatin", "lard", "bacon"],
+  },
+  glutenFree: {
+    bad: ["wheat", "flour", "maida", "bread", "pasta", "noodles", "barley", "rye",
+          "semolina", "suji", "rava", "biscuit", "crouton", "soy sauce"],
+  },
+  dairyFree: {
+    bad: ["milk", "cream", "butter", "cheese", "paneer", "ghee", "yogurt", "curd",
+          "whey", "condensed milk", "ice cream", "lactose"],
+  },
+  lowSodium: {
+    bad: ["salt", "soy sauce", "pickle", "olives", "chips", "salted", "brine",
+          "anchovies", "bacon", "canned", "processed"],
+  },
+  keto: {
+    bad: ["rice", "bread", "pasta", "potato", "sugar", "flour", "maida", "oats",
+          "corn", "banana", "mango", "grapes", "apple", "beans", "lentils"],
+  },
+  highProtein: {
+    bad: [],
+    good: ["chicken", "egg", "tofu", "lentils", "beans", "fish", "paneer",
+           "chickpeas", "greek yogurt", "quinoa", "tuna", "salmon"],
+  },
+};
+
+function calculateHealthScores(
+  profile: { diet_type?: string; allergies?: any; other_restrictions?: any } | null,
+  ingredients: { item: string; quantity: string }[]
+): HealthScore[] {
+  if (!profile || !ingredients?.length) return [];
+
+  const normalize = (v: any): string[] => {
+    if (Array.isArray(v)) return v.map((s) => String(s).toLowerCase().trim());
+    if (typeof v === "string")
+      return v.split(/[,;]+/).map((s) => s.toLowerCase().trim()).filter(Boolean);
+    return [];
+  };
+
+  const ingredientText = ingredients
+    .map((i) => i.item.toLowerCase())
+    .join(" ");
+
+  const checkScore = (badWords: string[], goodWords?: string[]) => {
+    if (goodWords && goodWords.length > 0) {
+      // For "positive" attributes like highProtein, score by presence of good words
+      const found = goodWords.filter((w) => ingredientText.includes(w)).length;
+      return Math.min(100, Math.round((found / goodWords.length) * 100 + 40));
+    }
+    const hits = badWords.filter((w) => ingredientText.includes(w)).length;
+    return Math.max(0, 100 - hits * 18);
+  };
+
+  const scores: HealthScore[] = [];
+  const diet = (profile.diet_type || "").toLowerCase();
+  const conditions = normalize(profile.other_restrictions);
+  const allergies = normalize(profile.allergies);
+
+  // Diet-based scores
+  if (diet === "vegan") {
+    const s = INGREDIENT_KEYWORDS.vegan;
+    scores.push({ label: "Vegan Friendly", emoji: "🌱", score: checkScore(s.bad!), color: "bg-green-100 text-green-800 border-green-200" });
+  }
+  if (diet === "vegetarian") {
+    const s = INGREDIENT_KEYWORDS.vegetarian;
+    scores.push({ label: "Vegetarian Safe", emoji: "🥦", score: checkScore(s.bad!), color: "bg-green-100 text-green-800 border-green-200" });
+  }
+  if (diet === "keto") {
+    const s = INGREDIENT_KEYWORDS.keto;
+    scores.push({ label: "Keto Friendly", emoji: "🥩", score: checkScore(s.bad!), color: "bg-yellow-100 text-yellow-800 border-yellow-200" });
+  }
+  if (diet === "high-protein") {
+    const s = INGREDIENT_KEYWORDS.highProtein;
+    scores.push({ label: "High Protein", emoji: "💪", score: checkScore([], s.good), color: "bg-blue-100 text-blue-800 border-blue-200" });
+  }
+
+  // Condition-based scores
+  for (const cond of conditions) {
+    if (cond.includes("diabet")) {
+      const s = INGREDIENT_KEYWORDS.diabeticSafe;
+      scores.push({ label: "Diabetic Safe", emoji: "💉", score: checkScore(s.bad!), color: "bg-blue-100 text-blue-800 border-blue-200" });
+    }
+    if (cond.includes("hypertension") || cond.includes("blood pressure") || cond.includes("low sodium")) {
+      const s = INGREDIENT_KEYWORDS.lowSodium;
+      scores.push({ label: "Low Sodium", emoji: "🫀", score: checkScore(s.bad!), color: "bg-purple-100 text-purple-800 border-purple-200" });
+    }
+    if (cond.includes("celiac") || cond.includes("gluten")) {
+      const s = INGREDIENT_KEYWORDS.glutenFree;
+      scores.push({ label: "Gluten Free", emoji: "🌾", score: checkScore(s.bad!), color: "bg-amber-100 text-amber-800 border-amber-200" });
+    }
+    if (cond.includes("lactose") || cond.includes("dairy")) {
+      const s = INGREDIENT_KEYWORDS.dairyFree;
+      scores.push({ label: "Dairy Free", emoji: "🥛", score: checkScore(s.bad!), color: "bg-sky-100 text-sky-800 border-sky-200" });
+    }
+    if (cond.includes("low sugar") || cond.includes("sugar free")) {
+      const s = INGREDIENT_KEYWORDS.lowSugar;
+      scores.push({ label: "Low Sugar", emoji: "🍬", score: checkScore(s.bad!), color: "bg-pink-100 text-pink-800 border-pink-200" });
+    }
+  }
+
+  // Allergy-based scores
+  for (const allergen of allergies) {
+    const score = ingredientText.includes(allergen) ? 20 : 98;
+    const label = allergen.charAt(0).toUpperCase() + allergen.slice(1);
+    scores.push({ label: `${label} Free`, emoji: "⚠️", score, color: "bg-red-100 text-red-800 border-red-200" });
+  }
+
+  // Fallback: always show a Low Sugar badge if no profile conditions match
+  if (scores.length === 0) {
+    const s = INGREDIENT_KEYWORDS.lowSugar;
+    scores.push({ label: "Low Sugar", emoji: "🍬", score: checkScore(s.bad!), color: "bg-green-100 text-green-800 border-green-200" });
+  }
+
+  // De-duplicate by label
+  const seen = new Set<string>();
+  return scores.filter((s) => { if (seen.has(s.label)) return false; seen.add(s.label); return true; });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function Recipes() {
   const { profile } = useProfile();
 
@@ -222,26 +360,17 @@ export default function Recipes() {
                   </div>
                 </div>
 
-                {/* Health Scores */}
+                {/* Health Scores — dynamically computed from profile & ingredients */}
                 <div className="flex flex-wrap gap-2">
-                  <Badge 
-                    variant="secondary" 
-                    className="text-sm px-3 py-1 bg-green-100 text-green-800 border-green-200"
-                  >
-                    🍬 Low Sugar: {recipe.healthScores.lowSugar}%
-                  </Badge>
-                  <Badge 
-                    variant="secondary"
-                    className="text-sm px-3 py-1 bg-blue-100 text-blue-800 border-blue-200"
-                  >
-                    💉 Diabetic Safe: {recipe.healthScores.diabeticSafe}%
-                  </Badge>
-                  <Badge 
-                    variant="secondary"
-                    className="text-sm px-3 py-1 bg-purple-100 text-purple-800 border-purple-200"
-                  >
-                    🌱 Vegan Friendly: {recipe.healthScores.veganFriendly}%
-                  </Badge>
+                  {calculateHealthScores(profile, recipe.ingredients).map((hs) => (
+                    <Badge
+                      key={hs.label}
+                      variant="secondary"
+                      className={`text-sm px-3 py-1 ${hs.color}`}
+                    >
+                      {hs.emoji} {hs.label}: {hs.score}%
+                    </Badge>
+                  ))}
                 </div>
 
                 {/* Cooking Instructions */}
