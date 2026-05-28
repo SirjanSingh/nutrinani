@@ -224,24 +224,27 @@ export default function Recipes() {
 
                 {/* Health Scores */}
                 <div className="flex flex-wrap gap-2">
-                  <Badge 
-                    variant="secondary" 
-                    className="text-sm px-3 py-1 bg-green-100 text-green-800 border-green-200"
-                  >
-                    🍬 Low Sugar: {recipe.healthScores.lowSugar}%
-                  </Badge>
-                  <Badge 
-                    variant="secondary"
-                    className="text-sm px-3 py-1 bg-blue-100 text-blue-800 border-blue-200"
-                  >
-                    💉 Diabetic Safe: {recipe.healthScores.diabeticSafe}%
-                  </Badge>
-                  <Badge 
-                    variant="secondary"
-                    className="text-sm px-3 py-1 bg-purple-100 text-purple-800 border-purple-200"
-                  >
-                    🌱 Vegan Friendly: {recipe.healthScores.veganFriendly}%
-                  </Badge>
+                  {Object.entries(recipe.healthScores || {}).map(([key, value]) => {
+                    const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                    let emoji = "🌿";
+                    if (key.toLowerCase().includes("sugar")) emoji = "🍬";
+                    if (key.toLowerCase().includes("diabetic")) emoji = "💉";
+                    if (key.toLowerCase().includes("vegan") || key.toLowerCase().includes("vegetarian")) emoji = "🌱";
+                    if (key.toLowerCase().includes("heart")) emoji = "❤️";
+                    if (key.toLowerCase().includes("sodium")) emoji = "🧂";
+                    if (key.toLowerCase().includes("gluten") || key.toLowerCase().includes("celiac")) emoji = "🌾";
+                    if (key.toLowerCase().includes("dairy") || key.toLowerCase().includes("lactose")) emoji = "🥛";
+
+                    return (
+                      <Badge 
+                        key={key}
+                        variant="secondary" 
+                        className="text-sm px-3 py-1 bg-green-100 text-green-800 border-green-200"
+                      >
+                        {emoji} {formattedKey}: {String(value)}%
+                      </Badge>
+                    );
+                  })}
                 </div>
 
                 {/* Cooking Instructions */}
