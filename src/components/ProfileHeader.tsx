@@ -10,16 +10,28 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { ChevronDown, User, Settings, LogOut, Users } from "lucide-react";
+import { ChevronDown, User, Settings, LogOut, Users, LogIn } from "lucide-react";
 
 export function ProfileHeader() {
   const navigate = useNavigate();
   const { activeProfile, profiles, selectProfile } = useProfile();
-  const { logout } = useAuth();
+  const { logout, isAuthed } = useAuth();
+
+  if (!isAuthed) {
+    return (
+      <Button
+        onClick={() => navigate("/login")}
+        className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-sm"
+      >
+        <LogIn className="w-4 h-4 mr-2" />
+        Sign In
+      </Button>
+    );
+  }
 
   if (!activeProfile) {
     return (
-      <Button onClick={() => navigate("/profiles")} variant="outline">
+      <Button onClick={() => navigate("/profiles")} variant="ghost">
         <User className="w-4 h-4 mr-2" />
         Select Profile
       </Button>
@@ -29,7 +41,7 @@ export function ProfileHeader() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="flex items-center gap-2">
+        <Button variant="ghost" className="flex items-center gap-2 hover:bg-background/40">
           <span className="text-lg">{activeProfile.avatar}</span>
           <span className="font-medium">{activeProfile.name}</span>
           <ChevronDown className="w-4 h-4" />
