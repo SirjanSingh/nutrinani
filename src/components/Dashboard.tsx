@@ -832,15 +832,6 @@ export default function Dashboard({ onNavigateToSection }: DashboardProps) {
           <span className="text-sm font-bold text-rose-900">{age ?? '—'}</span>
           <span className="text-xs text-muted-foreground">{age ? 'yrs' : 'add age'}</span>
         </div>
-
-        {/* Inline tip — fills remaining space */}
-        <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-yellow-200/80 bg-yellow-50/60 flex-1 min-w-[260px]">
-          <Lightbulb className="h-3.5 w-3.5 text-yellow-600 flex-shrink-0" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-yellow-700 flex-shrink-0">Tip</span>
-          <p className="text-xs text-foreground/90 leading-snug truncate flex-1">
-            {dailyTip.tip}
-          </p>
-        </div>
       </div>
 
       {/* Pantry snapshot / sign-in CTA — full width compact */}
