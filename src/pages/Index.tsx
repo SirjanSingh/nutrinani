@@ -11,6 +11,7 @@ import { Community } from "@/components/Community";
 import { ProfileHeader } from "@/components/ProfileHeader";
 import { ChatBot } from "@/components/ChatBot";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type Section =
   | "dashboard"
@@ -24,36 +25,51 @@ export type Section =
 
 const Index = () => {
   const navigate = useNavigate();
+  const { isAuthed, isAuthLoading } = useAuth();
   const { activeProfile, isProfileLoading } = useProfile();
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
 
   useEffect(() => {
-    if (!isProfileLoading && !activeProfile) {
+    if (!isAuthLoading && isAuthed && !isProfileLoading && !activeProfile) {
       navigate("/profiles");
     }
-  }, [activeProfile, isProfileLoading, navigate]);
+  }, [isAuthed, isAuthLoading, activeProfile, isProfileLoading, navigate]);
+
+  // Unauthed visitors can only see the public dashboard. If they try to
+  // navigate elsewhere via the sidebar, redirect them to login.
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthed && activeSection !== "dashboard") {
+      navigate("/login");
+    }
+  }, [isAuthed, isAuthLoading, activeSection, navigate]);
 
   const handleBackToDashboard = () => {
     setActiveSection("dashboard");
   };
 
+  const handleSectionChange = (section: Section) => {
+    if (!isAuthed && section !== "dashboard") {
+      navigate("/login");
+      return;
+    }
+    setActiveSection(section);
+  };
+
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="flex min-h-screen w-full">
       <Sidebar
         activeSection={activeSection}
-        setActiveSection={setActiveSection}
+        setActiveSection={handleSectionChange}
       />
 
-      <main className="flex-1 overflow-auto">
-        {/* Top bar */}
-        <div className="sticky top-0 z-10 bg-background/80 backdrop-blur border-b border-border/50">
-          <div className="container mx-auto max-w-7xl px-6 md:px-8 lg:px-12 py-4 flex items-center justify-end">
-            <ProfileHeader />
-          </div>
+      <main className="flex-1 overflow-auto relative">
+        {/* Floating Profile / Sign-in */}
+        <div className="absolute top-6 right-6 md:right-8 lg:right-12 z-50">
+          <ProfileHeader />
         </div>
 
-        <div className="container mx-auto p-6 md:p-8 lg:p-12 max-w-7xl animate-fade-in">
-          {activeSection === "dashboard" && <Dashboard onNavigateToSection={setActiveSection} />}
+        <div className="container mx-auto px-6 md:px-8 lg:px-12 pt-8 md:pt-10 pb-10 md:pb-14 max-w-7xl animate-fade-in">
+          {activeSection === "dashboard" && <Dashboard onNavigateToSection={handleSectionChange} />}
           {activeSection === "editProfile" && <EditProfile onBack={handleBackToDashboard} />}
           {activeSection === "scanner" && <Scanner />}
           {activeSection === "recipes" && <Recipes />}

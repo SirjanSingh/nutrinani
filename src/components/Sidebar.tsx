@@ -1,4 +1,5 @@
-import { LayoutDashboard, ScanBarcode, ChefHat, Mic, Package, Users, LogOut, MessageSquare } from "lucide-react";
+import { LayoutDashboard, ScanBarcode, ChefHat, Mic, Package, Users, LogOut, MessageSquare, Lock, LogIn } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Section } from "@/pages/Index";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,8 @@ const navItems = [
 ];
 
 export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthed } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <aside className="w-64 min-h-screen bg-card border-r border-sidebar-border p-6 flex flex-col">
@@ -37,28 +39,33 @@ export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id || (item.id === "dashboard" && activeSection === "editProfile");
-          
+          const isLocked = !isAuthed && item.id !== "dashboard";
+
           return (
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
+              title={isLocked ? "Sign in to use this feature" : undefined}
               className={`
                 flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200
-                ${isActive 
-                  ? "bg-primary text-primary-foreground shadow-md" 
-                  : "hover:bg-sidebar-accent text-sidebar-foreground"
+                ${isActive
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : isLocked
+                    ? "text-muted-foreground/70 hover:bg-sidebar-accent/60"
+                    : "hover:bg-sidebar-accent text-sidebar-foreground"
                 }
               `}
             >
               <Icon className="w-5 h-5" />
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium flex-1">{item.label}</span>
+              {isLocked && <Lock className="w-3.5 h-3.5 opacity-60" />}
             </button>
           );
         })}
       </nav>
 
-      {/* <div className="mt-auto pt-6 border-t border-sidebar-border space-y-3">
-        {user && (
+      <div className="mt-auto pt-6 border-t border-sidebar-border space-y-3">
+        {isAuthed && user ? (
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground truncate flex-1" title={user.email}>
               {user.email}
@@ -72,9 +79,16 @@ export const Sidebar = ({ activeSection, setActiveSection }: SidebarProps) => {
               <LogOut className="w-4 h-4" />
             </Button>
           </div>
+        ) : (
+          <Button
+            onClick={() => navigate("/login")}
+            className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
+          >
+            <LogIn className="w-4 h-4 mr-2" />
+            Sign In / Sign Up
+          </Button>
         )}
-      
-      </div> */}
+      </div>
     </aside>
   );
 };

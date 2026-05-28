@@ -5,7 +5,7 @@ import { BrowserMultiFormatReader } from "@zxing/browser"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User, Trash2, History } from "lucide-react"
+import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User, Trash2, History, ShieldCheck, ShieldAlert, ShieldX } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { useProfile } from "@/contexts/ProfileContext"
 import { useAuth } from "@/contexts/AuthContext"
@@ -86,6 +86,107 @@ const clearScanHistory = () => {
   }
 }
 
+/* ================= TEXT CLEANING ================= */
+const cleanIngredientText = (text: string): string => {
+  return text
+    .replace(/Ã©/g, 'é').replace(/Ã¨/g, 'è').replace(/Ã /g, 'à')
+    .replace(/Ã®/g, 'î').replace(/Ã´/g, 'ô').replace(/Ã¼/g, 'ü')
+    .replace(/Ã§/g, 'ç').replace(/Ã±/g, 'ñ').replace(/Â©/g, '©')
+    .replace(/Â®/g, '®').replace(/Â°/g, '°')
+    .replace(/PA©te/gi, 'Pâte').replace(/À /g, 'à ')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const cleanIngredientList = (items: string[]): string[] => {
+  return items.map(cleanIngredientText).filter(i => i.length > 1)
+}
+
+/* ================= SUITABILITY SCORE ================= */
+const computeSuitabilityScore = (
+  ingredients_en: string[],
+  ingredients_hi: string[],
+  profile: any
+): { score: number; breakdown: { label: string; penalty: number; matched: string }[] } => {
+  if (!profile) return { score: 100, breakdown: [] }
+
+  const allIngredients = [...ingredients_en, ...ingredients_hi].map(i => i.toLowerCase())
+  if (allIngredients.length === 0) return { score: 100, breakdown: [] }
+
+  let score = 100
+  const breakdown: { label: string; penalty: number; matched: string }[] = []
+
+  // Allergy matches: -30 each
+  if (profile.allergies?.length) {
+    profile.allergies.forEach((a: string) => {
+      const aLow = a.toLowerCase()
+      const match = allIngredients.find(i => i.includes(aLow))
+      if (match) {
+        score -= 30
+        breakdown.push({ label: `Allergy: ${a}`, penalty: -30, matched: match })
+      }
+    })
+  }
+
+  // Disease conflicts: -20 each
+  const diseaseMap: Record<string, string[]> = {
+    diabetes: ['sugar', 'glucose', 'fructose', 'sucrose', 'corn syrup', 'honey', 'dextrose'],
+    hypertension: ['salt', 'sodium', 'msg', 'monosodium glutamate'],
+    'high bp': ['salt', 'sodium', 'msg'],
+    heart: ['palm oil', 'hydrogenated', 'trans fat', 'lard', 'butter'],
+    celiac: ['wheat', 'gluten', 'barley', 'rye', 'malt', 'semolina'],
+    'fatty liver': ['palm oil', 'hydrogenated', 'high fructose corn syrup'],
+    gout: ['yeast extract', 'meat extract', 'anchovies'],
+  }
+  if (profile.diseases?.length) {
+    profile.diseases.forEach((d: string) => {
+      const dLow = d.toLowerCase()
+      for (const [key, terms] of Object.entries(diseaseMap)) {
+        if (dLow.includes(key)) {
+          const match = terms.find(t => allIngredients.some(i => i.includes(t)))
+          if (match) {
+            score -= 20
+            breakdown.push({ label: `Health (${d})`, penalty: -20, matched: match })
+          }
+        }
+      }
+    })
+  }
+
+  // Dislike matches: -10 each
+  if (profile.disliked_foods?.length) {
+    profile.disliked_foods.forEach((d: string) => {
+      const dLow = d.toLowerCase()
+      const match = allIngredients.find(i => i.includes(dLow))
+      if (match) {
+        score -= 10
+        breakdown.push({ label: `Dislike: ${d}`, penalty: -10, matched: match })
+      }
+    })
+  }
+
+  // Diet type violation: -15
+  if (profile.diet_type) {
+    const nonVegTerms = ['chicken', 'mutton', 'beef', 'pork', 'fish', 'meat', 'gelatin', 'lard', 'tallow']
+    const nonVeganTerms = [...nonVegTerms, 'milk', 'dairy', 'cream', 'butter', 'cheese', 'whey', 'casein', 'egg', 'honey']
+    const eggTerms = ['chicken', 'mutton', 'beef', 'pork', 'fish', 'meat', 'gelatin', 'lard']
+
+    let checkTerms: string[] = []
+    if (profile.diet_type === 'vegan') checkTerms = nonVeganTerms
+    else if (profile.diet_type === 'vegetarian') checkTerms = nonVegTerms
+    else if (profile.diet_type === 'eggetarian') checkTerms = eggTerms
+
+    const match = checkTerms.find(t => allIngredients.some(i => i.includes(t)))
+    if (match) {
+      score -= 15
+      breakdown.push({ label: `Diet (${profile.diet_type})`, penalty: -15, matched: match })
+    }
+  }
+
+  return { score: Math.max(0, Math.min(100, score)), breakdown }
+}
+
 export const Scanner = () => {
   const { user } = useAuth()
   const { profile } = useProfile()
@@ -111,6 +212,7 @@ export const Scanner = () => {
   const [warnings, setWarnings] = useState<string[]>([])
   const [scanHistory, setScanHistory] = useState<any[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [suitability, setSuitability] = useState<{ score: number; breakdown: { label: string; penalty: number; matched: string }[] } | null>(null)
 
   /* ================= LOAD HISTORY ON MOUNT ================= */
   useEffect(() => {
@@ -672,26 +774,36 @@ export const Scanner = () => {
       const hasIngredients =
         data.product?.ingredients_en?.length > 0 ||
         data.product?.ingredients_hi?.length > 0 ||
+        data.product?.ingredients_translated?.length > 0 ||
         (data.product?.rawIngredientsText && data.product.rawIngredientsText.length > 10)
 
       if (data.success && data.product && hasIngredients) {
         setProcessingStep("")
+
+        // Fix 1: Map ingredients_translated → ingredients_hi
+        const rawEn = data.product.ingredients_en || []
+        const rawHi = data.product.ingredients_hi || data.product.ingredients_translated || []
+
+        // Fix 2: Clean encoding artifacts
+        const cleanEn = cleanIngredientList(rawEn)
+        const cleanHi = cleanIngredientList(rawHi)
         
-        const foundWarnings = checkIngredients(
-          data.product.ingredients_en || [],
-          data.product.ingredients_hi || []
-        )
+        const foundWarnings = checkIngredients(cleanEn, cleanHi)
         setWarnings(foundWarnings)
+
+        // Fix 3: Compute suitability score
+        const suit = computeSuitabilityScore(cleanEn, cleanHi, profile)
+        setSuitability(suit)
 
         const resultData = {
           name: data.product.name || "Unknown Product",
-          ingredients_en: data.product.ingredients_en || [],
-          ingredients_hi: data.product.ingredients_hi || [],
+          ingredients_en: cleanEn,
+          ingredients_hi: cleanHi,
           rawIngredientsText: data.product.rawIngredientsText || "",
           source: data.source || "database",
           barcode: barcode,
           verdict: {
-            description: `✅ Found in ${data.source}. Contains ${data.product.ingredients_en?.length || 0} ingredients.`,
+            description: `✅ Found in ${data.source}. Contains ${cleanEn.length + cleanHi.length} ingredients.`,
             riskScore: foundWarnings.length > 0 ? 80 : 0,
           },
         }
@@ -703,6 +815,7 @@ export const Scanner = () => {
       } else {
         console.log("⚠️ Ingredients missing - need OCR")
         setProcessingStep("")
+        setSuitability(null)
         
         const resultData = {
           name: data.product?.name || `Barcode: ${barcode}`,
@@ -727,6 +840,7 @@ export const Scanner = () => {
     } catch (err: any) {
       console.error("❌ API Error:", err)
       setProcessingStep("")
+      setSuitability(null)
       
       const resultData = {
         name: `Barcode: ${barcode}`,
@@ -799,18 +913,24 @@ export const Scanner = () => {
 
       console.log("✅ OCR completed successfully")
 
-      const foundWarnings = checkIngredients(ocrResult.ingredients_en, ocrResult.ingredients_hi)
+      const cleanEn = cleanIngredientList(ocrResult.ingredients_en)
+      const cleanHi = cleanIngredientList(ocrResult.ingredients_hi)
+
+      const foundWarnings = checkIngredients(cleanEn, cleanHi)
       setWarnings(foundWarnings)
+
+      const suit = computeSuitabilityScore(cleanEn, cleanHi, profile)
+      setSuitability(suit)
 
       const resultData = {
         name: barcode ? `Product: ${barcode}` : "OCR Analysis",
-        ingredients_en: ocrResult.ingredients_en,
-        ingredients_hi: ocrResult.ingredients_hi,
+        ingredients_en: cleanEn,
+        ingredients_hi: cleanHi,
         rawIngredientsText: ocrResult.rawText,
         source: "ocr",
         barcode: barcode,
         verdict: {
-          description: `✅ OCR extracted ${ocrResult.ingredients_en.length + ocrResult.ingredients_hi.length} ingredients. Please verify accuracy.`,
+          description: `✅ OCR extracted ${cleanEn.length + cleanHi.length} ingredients. Please verify accuracy.`,
           riskScore: foundWarnings.length > 0 ? 80 : 0,
         },
       }
@@ -834,6 +954,8 @@ export const Scanner = () => {
     setShowHistory(false)
     const foundWarnings = checkIngredients(scan.ingredients_en || [], scan.ingredients_hi || [])
     setWarnings(foundWarnings)
+    const suit = computeSuitabilityScore(scan.ingredients_en || [], scan.ingredients_hi || [], profile)
+    setSuitability(suit)
   }
 
   /* ================= CLEANUP ================= */
@@ -1250,6 +1372,67 @@ export const Scanner = () => {
                               ✅ No allergens or restricted ingredients detected
                             </p>
                           </div>
+                        </div>
+                      )}
+
+                      {/* SUITABILITY SCORE GAUGE */}
+                      {suitability && !result.needsOCR && (
+                        <div className={`p-5 rounded-xl border-2 ${
+                          suitability.score >= 80 ? 'bg-emerald-50 border-emerald-400' :
+                          suitability.score >= 50 ? 'bg-amber-50 border-amber-400' :
+                          'bg-red-50 border-red-400'
+                        }`}>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              {suitability.score >= 80 ? <ShieldCheck className="w-6 h-6 text-emerald-600" /> :
+                               suitability.score >= 50 ? <ShieldAlert className="w-6 h-6 text-amber-600" /> :
+                               <ShieldX className="w-6 h-6 text-red-600" />}
+                              <span className="text-sm font-semibold">Suitability for You</span>
+                            </div>
+                            <Badge className={`text-base px-3 py-1 ${
+                              suitability.score >= 80 ? 'bg-emerald-600 hover:bg-emerald-700' :
+                              suitability.score >= 50 ? 'bg-amber-500 hover:bg-amber-600' :
+                              'bg-red-600 hover:bg-red-700'
+                            } text-white`}>
+                              {suitability.score >= 80 ? 'Safe for You' :
+                               suitability.score >= 50 ? 'Use Caution' : 'Avoid'}
+                            </Badge>
+                          </div>
+
+                          <div className="flex items-center gap-4 mb-3">
+                            <span className={`text-4xl font-black ${
+                              suitability.score >= 80 ? 'text-emerald-700' :
+                              suitability.score >= 50 ? 'text-amber-700' :
+                              'text-red-700'
+                            }`}>{suitability.score}%</span>
+                            <div className="flex-1">
+                              <div className="w-full h-4 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all duration-700 ${
+                                    suitability.score >= 80 ? 'bg-emerald-500' :
+                                    suitability.score >= 50 ? 'bg-amber-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${suitability.score}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {suitability.breakdown.length > 0 && (
+                            <div className="space-y-1.5 mt-3 pt-3 border-t border-gray-200">
+                              <p className="text-xs font-semibold text-gray-600 mb-1">Breakdown:</p>
+                              {suitability.breakdown.map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-xs">
+                                  <span className="text-gray-800">{item.label}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-gray-500 italic">({item.matched})</span>
+                                    <span className="font-bold text-red-600">{item.penalty}pts</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
