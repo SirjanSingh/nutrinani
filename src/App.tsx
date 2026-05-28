@@ -14,6 +14,7 @@ import ManageProfilesPage from "./pages/ManageProfilesPage";
 import EditProfilePage from "./pages/EditProfilePage";
 import NotFound from "./pages/NotFound";
 import GenerateRecipe from "./components/GenerateRecipe";
+import { AuthPage } from "./pages/AuthPage";
 
 const queryClient = new QueryClient();
 
@@ -58,14 +59,8 @@ const App = () => (
                   </AuthGate>
                 }
               />
-              <Route
-                path="/"
-                element={
-                  <AuthGate>
-                    <Index />
-                  </AuthGate>
-                }
-              />
+              <Route path="/login" element={<AuthPage />} />
+              <Route path="/" element={<Index />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

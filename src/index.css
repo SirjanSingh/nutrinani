@@ -8,9 +8,9 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Warm beige/cream background for healthcare feel */
-    --background: 35 25% 96%;
-    --foreground: 30 15% 20%;
+    /* Teal bluish off-white */
+    --background: 200 25% 98%;
+    --foreground: 200 15% 15%;
 
     /* Soft green primary - healthcare & nature */
     --primary: 145 50% 45%;
@@ -76,6 +76,10 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: linear-gradient(145deg, hsl(180 60% 82%) 0%, hsl(190 30% 97%) 45%, hsl(200 30% 97%) 55%, hsl(210 60% 84%) 100%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    min-height: 100vh;
   }
 }
