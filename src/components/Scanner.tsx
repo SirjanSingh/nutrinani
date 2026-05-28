@@ -5,10 +5,14 @@ import { BrowserMultiFormatReader } from "@zxing/browser"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User, Trash2, History } from "lucide-react"
+import { ScanBarcode, Loader2, AlertTriangle, Camera, PlayCircle, StopCircle, FileText, User, Trash2, History, Search, SwitchCamera, Package, Plus, Check } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useProfile } from "@/contexts/ProfileContext"
 import { useAuth } from "@/contexts/AuthContext"
+import { toast } from "@/hooks/use-toast"
+import { useAddPantryItem } from "@/hooks/useApi"
+import { chatJSON, fileToDataURL, OPENAI_MODELS } from "@/lib/openai"
 
 /* ================= CONFIG ================= */
 const SCANNER_API = "https://ubav5knsp8.execute-api.ap-south-1.amazonaws.com"  // ap-south-1
@@ -18,13 +22,14 @@ const STORAGE_KEY = "scan_history"
 /* ================= ZXING READER ================= */
 const codeReader = new BrowserMultiFormatReader()
 
-/* ================= TESSERACT LOADER ================= */
+/* ================= TESSERACT LOADER (legacy — kept as a fallback) ================= */
 declare global {
   interface Window {
     Tesseract: any
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const loadTesseract = (): Promise<any> => {
   return new Promise((resolve, reject) => {
     if (window.Tesseract) {
@@ -89,6 +94,7 @@ const clearScanHistory = () => {
 export const Scanner = () => {
   const { user } = useAuth()
   const { profile } = useProfile()
+  const addPantryItem = useAddPantryItem()
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -97,6 +103,10 @@ export const Scanner = () => {
   const streamRef = useRef<MediaStream | null>(null)
   const scanIntervalRef = useRef<number | null>(null)
   const isScannedRef = useRef(false)
+  const scanAttemptsRef = useRef(0)
+  const processingFrameRef = useRef(false)
+  const ocrWorkerRef = useRef<any>(null)
+  const isMountedRef = useRef(true)
 
   const [cameraOn, setCameraOn] = useState(false)
   const [continuousScanning, setContinuousScanning] = useState(false)
@@ -112,10 +122,55 @@ export const Scanner = () => {
   const [scanHistory, setScanHistory] = useState<any[]>([])
   const [showHistory, setShowHistory] = useState(false)
 
+  /* Camera selection (esp. mobile rear vs selfie) */
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("")
+
+  /* Product database search (before scanning) */
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searching, setSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchPerformed, setSearchPerformed] = useState(false)
+
+  /* "Add to Inventory" UI state */
+  const [addedToInventory, setAddedToInventory] = useState(false)
+  const [inventoryForm, setInventoryForm] = useState({
+    quantity: "1",
+    unit: "pc",
+    category: "Other",
+    expiryDate: "",
+  })
+  const [showInventoryForm, setShowInventoryForm] = useState(false)
+
   /* ================= LOAD HISTORY ON MOUNT ================= */
   useEffect(() => {
     const history = getScanHistory()
     setScanHistory(history)
+  }, [])
+
+  /* ================= ENUMERATE CAMERAS ================= */
+  const refreshVideoDevices = async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const cams = devices.filter((d) => d.kind === "videoinput")
+      setVideoDevices(cams)
+      // Prefer a back/environment-facing camera by label when no selection yet.
+      if (!selectedDeviceId && cams.length > 0) {
+        const rear = cams.find((d) => /back|rear|environment/i.test(d.label))
+        setSelectedDeviceId((rear || cams[cams.length - 1]).deviceId)
+      }
+    } catch (err) {
+      console.error("enumerateDevices failed:", err)
+    }
+  }
+
+  useEffect(() => {
+    refreshVideoDevices()
+    const handler = () => refreshVideoDevices()
+    navigator.mediaDevices?.addEventListener?.("devicechange", handler)
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /* ================= CHECK FOR ALLERGENS, DISLIKES & DISEASES ================= */
@@ -123,13 +178,17 @@ export const Scanner = () => {
     if (!profile) return []
 
     const allIngredients = [...ingredients_en, ...ingredients_hi].map((ing) => ing.toLowerCase())
+    // Word-boundary match avoids false positives like "nut" matching "nutmeg" or "egg" matching "eggplant".
+    const matchTerm = (term: string) => {
+      const escaped = term.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const re = new RegExp(`\\b${escaped}\\b`, "i")
+      return allIngredients.some((ing) => re.test(ing))
+    }
     const foundWarnings: string[] = []
 
     if (profile.allergies && Array.isArray(profile.allergies) && profile.allergies.length > 0) {
       profile.allergies.forEach((allergen: string) => {
-        const allergenLower = allergen.toLowerCase()
-        const found = allIngredients.some((ing) => ing.includes(allergenLower))
-        if (found) {
+        if (matchTerm(allergen)) {
           foundWarnings.push(`🚨 ALLERGY ALERT: Contains ${allergen}`)
         }
       })
@@ -137,111 +196,90 @@ export const Scanner = () => {
 
     if (profile.disliked_foods && Array.isArray(profile.disliked_foods) && profile.disliked_foods.length > 0) {
       profile.disliked_foods.forEach((dislike: string) => {
-        const dislikeLower = dislike.toLowerCase()
-        const found = allIngredients.some((ing) => ing.includes(dislikeLower))
-        if (found) {
+        if (matchTerm(dislike)) {
           foundWarnings.push(`❌ DISLIKE: Contains ${dislike}`)
         }
       })
     }
 
     if (profile.diseases && Array.isArray(profile.diseases) && profile.diseases.length > 0) {
-      const diseaseWarnings: string[] = []
-      
+      const diseaseWarnings = new Set<string>()
+
       profile.diseases.forEach((disease: string) => {
         const diseaseLower = disease.toLowerCase()
-        
+
         if (diseaseLower.includes('diabetes')) {
           const sugarTerms = ['sugar', 'glucose', 'fructose', 'sucrose', 'corn syrup', 'honey', 'molasses', 'dextrose']
-          const foundSugar = sugarTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundSugar) {
-            diseaseWarnings.push(`⚕️ DIABETES WARNING: Contains high sugar ingredients`)
+          if (sugarTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ DIABETES WARNING: Contains high sugar ingredients`)
           }
         }
-        
+
         if (diseaseLower.includes('hypertension') || diseaseLower.includes('high bp')) {
           const saltTerms = ['salt', 'sodium', 'monosodium glutamate', 'msg', 'sodium chloride']
-          const foundSalt = saltTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundSalt) {
-            diseaseWarnings.push(`⚕️ HYPERTENSION WARNING: Contains high sodium/salt`)
+          if (saltTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ HYPERTENSION WARNING: Contains high sodium/salt`)
           }
         }
-        
+
         if (diseaseLower.includes('heart')) {
           const fatTerms = ['palm oil', 'hydrogenated', 'trans fat', 'saturated fat', 'lard', 'butter']
-          const foundFat = fatTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundFat) {
-            diseaseWarnings.push(`⚕️ HEART HEALTH WARNING: Contains unhealthy fats`)
+          if (fatTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ HEART HEALTH WARNING: Contains unhealthy fats`)
           }
         }
-        
+
         if (diseaseLower.includes('celiac')) {
           const glutenTerms = ['wheat', 'gluten', 'barley', 'rye', 'malt', 'semolina', 'durum']
-          const foundGluten = glutenTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundGluten) {
-            diseaseWarnings.push(`⚕️ CELIAC WARNING: Contains gluten`)
+          if (glutenTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ CELIAC WARNING: Contains gluten`)
           }
         }
-        
+
         if (diseaseLower.includes('fatty liver')) {
           const fattyLiverTerms = ['palm oil', 'hydrogenated', 'trans fat', 'high fructose corn syrup']
-          const foundRisk = fattyLiverTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundRisk) {
-            diseaseWarnings.push(`⚕️ FATTY LIVER WARNING: Contains ingredients to avoid`)
+          if (fattyLiverTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ FATTY LIVER WARNING: Contains ingredients to avoid`)
           }
         }
-        
+
         if (diseaseLower.includes('gout')) {
           const purinTerms = ['yeast extract', 'meat extract', 'anchovies', 'sardines']
-          const foundPurin = purinTerms.some(term => 
-            allIngredients.some(ing => ing.includes(term))
-          )
-          if (foundPurin) {
-            diseaseWarnings.push(`⚕️ GOUT WARNING: Contains high-purine ingredients`)
+          if (purinTerms.some(matchTerm)) {
+            diseaseWarnings.add(`⚕️ GOUT WARNING: Contains high-purine ingredients`)
           }
         }
       })
-      
+
       foundWarnings.push(...diseaseWarnings)
     }
 
     if (profile.other_restrictions && typeof profile.other_restrictions === 'string') {
       const restrictionsList = profile.other_restrictions
         .split(',')
-        .map((r: string) => r.trim().toLowerCase())
+        .map((r: string) => r.trim())
         .filter((r: string) => r.length > 2)
-      
+
       restrictionsList.forEach((restriction: string) => {
-        const found = allIngredients.some((ing) => ing.includes(restriction))
-        if (found) {
+        if (matchTerm(restriction)) {
           foundWarnings.push(`⚠️ RESTRICTION: Contains ${restriction}`)
         }
       })
     }
 
-    return foundWarnings
+    return Array.from(new Set(foundWarnings))
   }
 
   /* ================= MANUAL BARCODE ENTRY ================= */
   const handleManualSubmit = async () => {
     const trimmed = manualBarcode.trim()
     if (!trimmed) {
-      alert("Please enter a barcode")
+      toast({ title: "Please enter a barcode", variant: "destructive" })
       return
     }
 
     if (trimmed.length < 8 || trimmed.length > 14) {
-      alert("Barcode should be 8-14 digits")
+      toast({ title: "Invalid barcode", description: "Barcode should be 8-14 digits", variant: "destructive" })
       return
     }
 
@@ -252,15 +290,135 @@ export const Scanner = () => {
     await fetchScanResult(trimmed)
   }
 
+  /* ================= PRODUCT DATABASE SEARCH (via OpenAI) ================= */
+  const searchProducts = async () => {
+    const q = searchQuery.trim()
+    if (!q) {
+      toast({ title: "Enter a product name to search", variant: "destructive" })
+      return
+    }
+    setSearching(true)
+    setSearchResults([])
+    setSearchPerformed(false)
+    try {
+      const data = await chatJSON<{
+        products: Array<{
+          name: string
+          brand?: string
+          barcode?: string
+          ingredients_en?: string[]
+          ingredients_hi?: string[]
+        }>
+      }>({
+        model: OPENAI_MODELS.text,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a packaged-food lookup helper. Given a product query, return up to 6 likely real products sold in India and globally. " +
+              "Respond with JSON only matching: " +
+              `{"products":[{"name":string,"brand":string,"barcode":string,"ingredients_en":string[],"ingredients_hi":string[]}]}.` +
+              " Use empty string or empty arrays when unsure. Prefer common Indian SKUs when relevant.",
+          },
+          {
+            role: "user",
+            content: `Find products matching: "${q}". Return JSON only.`,
+          },
+        ],
+        temperature: 0.2,
+      })
+
+      const hits = (data?.products || [])
+        .filter((p) => p?.name)
+        .map((p) => ({
+          // Reuse the shape the UI already renders for OFF results.
+          code: p.barcode || `ai-${Math.random().toString(36).slice(2, 10)}`,
+          product_name: p.name,
+          brands: p.brand,
+          image_small_url: "",
+          ingredients_en: p.ingredients_en || [],
+          ingredients_hi: p.ingredients_hi || [],
+          ai_source: true,
+        }))
+
+      setSearchResults(hits)
+      setSearchPerformed(true)
+      if (hits.length === 0) {
+        toast({
+          title: "No matches",
+          description: "Try OCR on the back of the packaging.",
+        })
+      }
+    } catch (err: any) {
+      console.error("Search error:", err)
+      toast({
+        title: "Search failed",
+        description: err?.message || "Could not reach the model.",
+        variant: "destructive",
+      })
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const pickSearchResult = async (hit: any) => {
+    if (!hit) return
+    setSearchResults([])
+    setSearchPerformed(false)
+    setSearchQuery("")
+
+    // AI results carry their own ingredients — render directly so we skip the
+    // barcode-lookup roundtrip. Real barcodes fall through to fetchScanResult.
+    if (hit.ai_source) {
+      const ingredients_en: string[] = hit.ingredients_en || []
+      const ingredients_hi: string[] = hit.ingredients_hi || []
+      const foundWarnings = checkIngredients(ingredients_en, ingredients_hi)
+      setWarnings(foundWarnings)
+      setBarcode(hit.code?.startsWith("ai-") ? null : hit.code)
+      const resultData = {
+        name: hit.product_name + (hit.brands ? ` (${hit.brands})` : ""),
+        ingredients_en,
+        ingredients_hi,
+        rawIngredientsText: "",
+        source: "ai",
+        barcode: hit.code?.startsWith("ai-") ? undefined : hit.code,
+        verdict: {
+          description: `🤖 AI lookup. ${ingredients_en.length + ingredients_hi.length} ingredients listed. Please verify against the packaging.`,
+          riskScore: foundWarnings.length > 0 ? 80 : 0,
+        },
+      }
+      setResult(resultData)
+      setAddedToInventory(false)
+      setShowInventoryForm(false)
+      saveScanToHistory(resultData)
+      setScanHistory(getScanHistory())
+      return
+    }
+
+    setBarcode(hit.code)
+    await fetchScanResult(hit.code)
+  }
+
   /* ================= CAMERA ================= */
+  const buildVideoConstraints = (): MediaTrackConstraints => {
+    const base: MediaTrackConstraints = {
+      width: { ideal: 1920, min: 1280 },
+      height: { ideal: 1080, min: 720 },
+    }
+    if (selectedDeviceId) {
+      return { ...base, deviceId: { exact: selectedDeviceId } }
+    }
+    return { ...base, facingMode: "environment" }
+  }
+
   const startCamera = async () => {
+    // Guard against opening a second stream when one is already active.
+    if (streamRef.current) {
+      return
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920, min: 1280 },
-          height: { ideal: 1080, min: 720 },
-        },
+        video: buildVideoConstraints(),
       })
 
       if (videoRef.current) {
@@ -268,10 +426,66 @@ export const Scanner = () => {
         streamRef.current = stream
         setCameraOn(true)
         console.log("✅ Camera started")
+        // Labels are only populated after the user grants permission, so
+        // re-enumerate now to get readable names in the dropdown.
+        refreshVideoDevices()
+      } else {
+        stream.getTracks().forEach((t) => t.stop())
       }
     } catch (err) {
       console.error("❌ Camera error:", err)
-      alert("Cannot access camera. Please check permissions.")
+      toast({
+        title: "Camera unavailable",
+        description: "Cannot access camera. Please check permissions.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const switchCamera = async (deviceId: string) => {
+    setSelectedDeviceId(deviceId)
+    if (!cameraOn) return
+    // Tear down the current stream and reopen with the new device.
+    const wasContinuous = continuousScanning
+    const wasOcrMode = ocrCameraMode
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current)
+      scanIntervalRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
+          deviceId: { exact: deviceId },
+        },
+      })
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        streamRef.current = stream
+      }
+      // Resume the prior mode.
+      if (wasContinuous) {
+        isScannedRef.current = false
+        processingFrameRef.current = false
+        scanAttemptsRef.current = 0
+        setScanAttempts(0)
+        scanIntervalRef.current = window.setInterval(() => {
+          if (isScannedRef.current || processingFrameRef.current) return
+          scanFrame()
+        }, 500)
+      }
+      if (!wasOcrMode && !wasContinuous) {
+        // nothing extra
+      }
+    } catch (err) {
+      console.error("Switch camera failed:", err)
+      toast({ title: "Could not switch camera", variant: "destructive" })
+      setCameraOn(false)
     }
   }
 
@@ -298,12 +512,14 @@ export const Scanner = () => {
   /* ================= CONTINUOUS SCANNING ================= */
   const startContinuousScan = () => {
     if (!videoRef.current || !canvasRef.current) {
-      alert("Camera not ready")
+      toast({ title: "Camera not ready", variant: "destructive" })
       return
     }
 
     setContinuousScanning(true)
     isScannedRef.current = false
+    processingFrameRef.current = false
+    scanAttemptsRef.current = 0
     setBarcode(null)
     setResult(null)
     setScanAttempts(0)
@@ -311,9 +527,9 @@ export const Scanner = () => {
     console.log("🔄 Starting continuous scan mode...")
 
     scanIntervalRef.current = window.setInterval(() => {
-      if (!isScannedRef.current) {
-        scanFrame()
-      }
+      // Skip ticks while a previous frame is still processing or we already succeeded.
+      if (isScannedRef.current || processingFrameRef.current) return
+      scanFrame()
     }, 500)
   }
 
@@ -341,12 +557,15 @@ export const Scanner = () => {
     const context = canvas.getContext("2d")
     if (!context) return
 
+    processingFrameRef.current = true
+    let imageUrl: string | null = null
     try {
       canvas.width = video.videoWidth
       canvas.height = video.videoHeight
       context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-      setScanAttempts((prev) => prev + 1)
+      scanAttemptsRef.current += 1
+      setScanAttempts(scanAttemptsRef.current)
 
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob((b) => {
@@ -355,7 +574,7 @@ export const Scanner = () => {
         }, "image/png")
       })
 
-      const imageUrl = URL.createObjectURL(blob)
+      imageUrl = URL.createObjectURL(blob)
 
       try {
         const result = await codeReader.decodeFromImageUrl(imageUrl)
@@ -366,23 +585,25 @@ export const Scanner = () => {
         isScannedRef.current = true
         stopContinuousScan()
         setBarcode(code)
-        await fetchScanResult(code)
         playBeep()
+        await fetchScanResult(code)
       } catch (decodeErr) {
-        if (scanAttempts >= 20) {
+        // Read the counter from the ref, not the stale React state.
+        if (scanAttemptsRef.current >= 20) {
           console.log("⚠️ No barcode after 20 attempts - triggering OCR fallback")
           isScannedRef.current = true
           stopContinuousScan()
 
           const file = new File([blob], "capture.jpg", { type: "image/jpeg" })
-          await handleOCRUpload(file)
           playBeep()
+          await handleOCRUpload(file)
         }
       }
-
-      URL.revokeObjectURL(imageUrl)
     } catch (err) {
       console.error("Frame scan error:", err)
+    } finally {
+      if (imageUrl) URL.revokeObjectURL(imageUrl)
+      processingFrameRef.current = false
     }
   }
 
@@ -408,48 +629,57 @@ export const Scanner = () => {
     }
   }
 
-  /* ================= OCR WITH TESSERACT ================= */
+  /* ================= OCR (via GPT-4o-mini vision) ================= */
   const performOCR = async (imageFile: File) => {
     setOcrProcessing(true)
     setOcrProgress(0)
-    setProcessingStep("Loading OCR engine...")
+    setProcessingStep("Sending image to the model...")
 
     try {
-      const Tesseract = await loadTesseract()
-      setProcessingStep("Initializing OCR worker...")
-
-      const worker = await Tesseract.createWorker("eng", 1, {
-        logger: (m: any) => {
-          if (m.status === "recognizing text") {
-            setOcrProgress(Math.round(m.progress * 100))
-            setProcessingStep(`Reading text... ${Math.round(m.progress * 100)}%`)
-          }
-        },
-      })
-
-      setProcessingStep("Pre-processing image...")
-
-      const processedImage = await preprocessImage(imageFile)
-
-      setProcessingStep("Analyzing image...")
-      const {
-        data: { text },
-      } = await worker.recognize(processedImage, {
-        rotateAuto: true,
-      })
-
-      await worker.terminate()
-
-      console.log("📝 OCR Raw Text:", text)
-
+      const dataUrl = await fileToDataURL(imageFile)
+      setOcrProgress(40)
       setProcessingStep("Extracting ingredients...")
-      const ingredients = extractIngredients(text)
 
+      const data = await chatJSON<{
+        ingredients_en: string[]
+        ingredients_hi: string[]
+        raw_text: string
+      }>({
+        model: OPENAI_MODELS.visionText,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You read the back of food packaging and extract the ingredients list. " +
+              `Reply with JSON only: {"ingredients_en":string[],"ingredients_hi":string[],"raw_text":string}.` +
+              " ingredients_en is the list in English (translate or transliterate from Hindi if needed). " +
+              " ingredients_hi keeps the Hindi/Devanagari items as-is. " +
+              " raw_text is the full ingredients line(s) you read, verbatim. " +
+              " Each list item should be a single ingredient (no percentages or sub-clauses). " +
+              " If no ingredients list is visible, return empty arrays and an empty raw_text.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Extract the ingredients list. Return JSON only." },
+              { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        maxTokens: 800,
+      })
+
+      setOcrProgress(100)
       setOcrProcessing(false)
       setProcessingStep("")
       setOcrProgress(0)
 
-      return ingredients
+      return {
+        ingredients_en: Array.isArray(data?.ingredients_en) ? data.ingredients_en : [],
+        ingredients_hi: Array.isArray(data?.ingredients_hi) ? data.ingredients_hi : [],
+        rawText: typeof data?.raw_text === "string" ? data.raw_text : "",
+      }
     } catch (err) {
       console.error("❌ OCR Error:", err)
       setOcrProcessing(false)
@@ -461,20 +691,26 @@ export const Scanner = () => {
 
   /* ================= IMAGE PREPROCESSING ================= */
   const preprocessImage = async (file: File): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const img = new Image()
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
+      const url = URL.createObjectURL(file)
 
       if (!ctx) {
+        URL.revokeObjectURL(url)
         resolve(file)
         return
       }
 
+      const cleanup = () => URL.revokeObjectURL(url)
+
       img.onload = () => {
-        const scale = 3
-        canvas.width = img.width * scale
-        canvas.height = img.height * scale
+        // Cap upscale so very large source images don't allocate huge canvases.
+        const MAX_SIDE = 3000
+        const scale = Math.min(3, MAX_SIDE / Math.max(img.width, img.height, 1))
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
 
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = "high"
@@ -483,6 +719,7 @@ export const Scanner = () => {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageData.data
 
+        // Pass 1: grayscale.
         for (let i = 0; i < data.length; i += 4) {
           const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
           data[i] = gray
@@ -490,7 +727,23 @@ export const Scanner = () => {
           data[i + 2] = gray
         }
 
-        const threshold = 128
+        // Pass 2: contrast stretch before binarisation (previously this was a no-op
+        // because it ran after thresholding to 0/255).
+        const contrast = 60
+        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
+        for (let i = 0; i < data.length; i += 4) {
+          const v = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128))
+          data[i] = v
+          data[i + 1] = v
+          data[i + 2] = v
+        }
+
+        // Pass 3: binarise with mean threshold (more robust than a fixed 128
+        // on photos with uneven lighting).
+        let sum = 0
+        for (let i = 0; i < data.length; i += 4) sum += data[i]
+        const mean = sum / (data.length / 4)
+        const threshold = Math.max(96, Math.min(180, mean))
         for (let i = 0; i < data.length; i += 4) {
           const value = data[i] > threshold ? 255 : 0
           data[i] = value
@@ -498,28 +751,19 @@ export const Scanner = () => {
           data[i + 2] = value
         }
 
-        const contrast = 80
-        const factor = (259 * (contrast + 255)) / (255 * (259 - contrast))
-
-        for (let i = 0; i < data.length; i += 4) {
-          data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128))
-          data[i + 1] = Math.min(255, Math.max(0, factor * (data[i + 1] - 128) + 128))
-          data[i + 2] = Math.min(255, Math.max(0, factor * (data[i + 2] - 128) + 128))
-        }
-
         ctx.putImageData(imageData, 0, 0)
 
         canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob)
-          } else {
-            resolve(file)
-          }
+          cleanup()
+          resolve(blob || file)
         }, "image/png")
       }
 
-      img.onerror = () => resolve(file)
-      img.src = URL.createObjectURL(file)
+      img.onerror = () => {
+        cleanup()
+        resolve(file)
+      }
+      img.src = url
     })
   }
 
@@ -631,10 +875,9 @@ export const Scanner = () => {
     setBarcode(null)
     setResult(null)
 
+    const imageUrl = URL.createObjectURL(file)
     try {
-      const imageUrl = URL.createObjectURL(file)
       console.log("🔍 Scanning uploaded image for barcode...")
-
       const result = await codeReader.decodeFromImageUrl(imageUrl)
 
       const code = result.getText()
@@ -642,11 +885,15 @@ export const Scanner = () => {
 
       setBarcode(code)
       await fetchScanResult(code)
-
-      URL.revokeObjectURL(imageUrl)
     } catch (err) {
       console.error("❌ No barcode in image:", err)
-      alert("No barcode detected. Try:\n• Clearer photo\n• Better lighting\n• Different angle")
+      toast({
+        title: "No barcode detected",
+        description: "Try a clearer photo, better lighting, or a different angle.",
+        variant: "destructive",
+      })
+    } finally {
+      URL.revokeObjectURL(imageUrl)
     }
   }
 
@@ -676,7 +923,7 @@ export const Scanner = () => {
 
       if (data.success && data.product && hasIngredients) {
         setProcessingStep("")
-        
+
         const foundWarnings = checkIngredients(
           data.product.ingredients_en || [],
           data.product.ingredients_hi || []
@@ -697,13 +944,14 @@ export const Scanner = () => {
         }
 
         setResult(resultData)
+        setAddedToInventory(false)
+        setShowInventoryForm(false)
         saveScanToHistory(resultData)
-        const updated = getScanHistory()
-        setScanHistory(updated)
+        setScanHistory(getScanHistory())
       } else {
         console.log("⚠️ Ingredients missing - need OCR")
         setProcessingStep("")
-        
+
         const resultData = {
           name: data.product?.name || `Barcode: ${barcode}`,
           ingredients_en: [],
@@ -720,14 +968,15 @@ export const Scanner = () => {
         }
 
         setResult(resultData)
+        setAddedToInventory(false)
+        setShowInventoryForm(false)
         saveScanToHistory(resultData)
-        const updated = getScanHistory()
-        setScanHistory(updated)
+        setScanHistory(getScanHistory())
       }
     } catch (err: any) {
       console.error("❌ API Error:", err)
       setProcessingStep("")
-      
+
       const resultData = {
         name: `Barcode: ${barcode}`,
         ingredients_en: [],
@@ -743,16 +992,17 @@ export const Scanner = () => {
       }
 
       setResult(resultData)
+      setAddedToInventory(false)
+      setShowInventoryForm(false)
       saveScanToHistory(resultData)
-      const updated = getScanHistory()
-      setScanHistory(updated)
+      setScanHistory(getScanHistory())
     }
   }
 
   /* ================= OCR FROM CAMERA ================= */
   const captureForOCR = async () => {
     if (!videoRef.current || !canvasRef.current) {
-      alert("Camera not ready")
+      toast({ title: "Camera not ready", variant: "destructive" })
       return
     }
 
@@ -760,7 +1010,7 @@ export const Scanner = () => {
     const canvas = canvasRef.current
 
     if (video.readyState !== video.HAVE_ENOUGH_DATA) {
-      alert("Video not ready. Please wait a moment.")
+      toast({ title: "Video not ready", description: "Please wait a moment.", variant: "destructive" })
       return
     }
 
@@ -787,7 +1037,7 @@ export const Scanner = () => {
       await handleOCRUpload(file, result?.barcode)
     } catch (err) {
       console.error("Capture error:", err)
-      alert("Failed to capture image")
+      toast({ title: "Capture failed", description: "Failed to capture image", variant: "destructive" })
     }
   }
 
@@ -816,6 +1066,8 @@ export const Scanner = () => {
       }
 
       setResult(resultData)
+      setAddedToInventory(false)
+      setShowInventoryForm(false)
       saveScanToHistory(resultData)
       const updated = getScanHistory()
       setScanHistory(updated)
@@ -823,7 +1075,7 @@ export const Scanner = () => {
       console.log("💾 Scan saved to localStorage")
     } catch (err: any) {
       console.error("❌ OCR failed:", err)
-      alert(`OCR failed: ${err.message}`)
+      toast({ title: "OCR failed", description: err?.message || "Unknown error", variant: "destructive" })
     }
   }
 
@@ -832,14 +1084,64 @@ export const Scanner = () => {
     setResult(scan)
     setBarcode(scan.barcode || null)
     setShowHistory(false)
+    setAddedToInventory(false)
+    setShowInventoryForm(false)
     const foundWarnings = checkIngredients(scan.ingredients_en || [], scan.ingredients_hi || [])
     setWarnings(foundWarnings)
   }
 
+  /* ================= ADD TO INVENTORY ================= */
+  const handleAddToInventory = () => {
+    if (!result?.name) {
+      toast({ title: "Nothing to add", variant: "destructive" })
+      return
+    }
+    const qty = parseFloat(inventoryForm.quantity)
+    addPantryItem.mutate(
+      {
+        name: result.name,
+        quantity: isNaN(qty) ? undefined : qty,
+        unit: inventoryForm.unit,
+        category: inventoryForm.category,
+        expiryDate: inventoryForm.expiryDate || undefined,
+      } as any,
+      {
+        onSuccess: () => {
+          setAddedToInventory(true)
+          setShowInventoryForm(false)
+          toast({
+            title: "Added to inventory",
+            description: result.name,
+          })
+        },
+        onError: (err: any) => {
+          toast({
+            title: "Could not add",
+            description: err?.message || "Please try again",
+            variant: "destructive",
+          })
+        },
+      }
+    )
+  }
+
   /* ================= CLEANUP ================= */
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
-      stopCamera()
+      isMountedRef.current = false
+      if (scanIntervalRef.current) {
+        clearInterval(scanIntervalRef.current)
+        scanIntervalRef.current = null
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop())
+        streamRef.current = null
+      }
+      if (ocrWorkerRef.current) {
+        try { ocrWorkerRef.current.terminate?.() } catch { /* noop */ }
+        ocrWorkerRef.current = null
+      }
     }
   }, [])
 
@@ -928,6 +1230,91 @@ export const Scanner = () => {
                   Scan History ({scanHistory.length})
                 </Button>
 
+                {/* PRODUCT NAME SEARCH */}
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <p className="text-sm font-medium text-emerald-900 mb-3">
+                    🔎 Search Product in Database:
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && searchProducts()}
+                      placeholder="e.g. Kinder Joy, Maggi noodles..."
+                      className="flex-1 px-3 py-2 border border-emerald-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      disabled={searching || ocrProcessing}
+                    />
+                    <Button
+                      onClick={searchProducts}
+                      disabled={!searchQuery.trim() || searching || ocrProcessing}
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {searching ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4 mr-1" />
+                          Search
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-emerald-700 mt-2">
+                    Find products without scanning. Not found? Use OCR on the back.
+                  </p>
+
+                  {/* SEARCH RESULTS */}
+                  {searchResults.length > 0 && (
+                    <div className="mt-3 space-y-1.5 max-h-72 overflow-y-auto">
+                      {searchResults.map((hit: any) => (
+                        <div
+                          key={hit.code}
+                          onClick={() => pickSearchResult(hit)}
+                          className="flex gap-2 p-2 bg-white border border-emerald-200 rounded cursor-pointer hover:bg-emerald-100 transition"
+                        >
+                          {hit.image_small_url && (
+                            <img
+                              src={hit.image_small_url}
+                              alt=""
+                              className="w-10 h-10 object-cover rounded flex-shrink-0"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {hit.product_name || hit.brands || "Unnamed product"}
+                            </p>
+                            {hit.brands && hit.product_name && (
+                              <p className="text-xs text-gray-600 truncate">{hit.brands}</p>
+                            )}
+                            <p className="text-xs text-gray-500 font-mono">{hit.code}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {searchPerformed && searchResults.length === 0 && !searching && (
+                    <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded text-xs text-yellow-900 space-y-2">
+                      <p className="font-medium">No matches found in the database.</p>
+                      <p>📸 Capture the ingredients label on the back to analyse with OCR.</p>
+                      <Button
+                        onClick={() => {
+                          setSearchPerformed(false)
+                          startOCRCameraMode()
+                        }}
+                        size="sm"
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        disabled={ocrProcessing}
+                      >
+                        <FileText className="w-4 h-4 mr-1" />
+                        Capture Ingredients (OCR)
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
                 {/* MANUAL BARCODE INPUT */}
                 <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
                   <p className="text-sm font-medium text-purple-900 mb-3">⌨️ Enter Barcode Manually:</p>
@@ -936,7 +1323,7 @@ export const Scanner = () => {
                       type="text"
                       value={manualBarcode}
                       onChange={(e) => setManualBarcode(e.target.value.replace(/\D/g, ""))}
-                      onKeyPress={(e) => e.key === "Enter" && handleManualSubmit()}
+                      onKeyDown={(e) => e.key === "Enter" && handleManualSubmit()}
                       placeholder="Enter barcode number..."
                       className="flex-1 px-3 py-2 border border-purple-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                       maxLength={14}
@@ -964,6 +1351,29 @@ export const Scanner = () => {
                     <li>✨ Data saved to localStorage automatically</li>
                   </ol>
                 </div>
+
+                {/* CAMERA SELECTOR */}
+                {videoDevices.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <SwitchCamera className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                    <Select
+                      value={selectedDeviceId}
+                      onValueChange={(v) => switchCamera(v)}
+                      disabled={ocrProcessing}
+                    >
+                      <SelectTrigger className="flex-1 h-9 text-xs">
+                        <SelectValue placeholder="Choose a camera" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {videoDevices.map((d, idx) => (
+                          <SelectItem key={d.deviceId || idx} value={d.deviceId}>
+                            {d.label || `Camera ${idx + 1}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 {/* VIDEO PREVIEW */}
                 <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
@@ -1087,7 +1497,16 @@ export const Scanner = () => {
                 </div>
 
                 {/* UPLOAD OPTIONS */}
-                <div className="grid grid-cols-1">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    variant="secondary"
+                    className="w-full"
+                    disabled={ocrProcessing}
+                  >
+                    <ScanBarcode className="w-4 h-4 mr-2" />
+                    Upload for Barcode
+                  </Button>
                   <Button
                     onClick={() => ocrFileInputRef.current?.click()}
                     variant="secondary"
@@ -1095,7 +1514,7 @@ export const Scanner = () => {
                     disabled={ocrProcessing}
                   >
                     <FileText className="w-4 h-4 mr-2" />
-                    Upload Image for OCR
+                    Upload for OCR
                   </Button>
                 </div>
 
@@ -1106,6 +1525,7 @@ export const Scanner = () => {
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
+                    e.target.value = ""
                     if (file) scanFromFile(file)
                   }}
                 />
@@ -1117,6 +1537,7 @@ export const Scanner = () => {
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0]
+                    e.target.value = ""
                     if (file) handleOCRUpload(file, result?.barcode)
                   }}
                 />
@@ -1250,6 +1671,145 @@ export const Scanner = () => {
                               ✅ No allergens or restricted ingredients detected
                             </p>
                           </div>
+                        </div>
+                      )}
+
+                      {/* ADD TO INVENTORY */}
+                      {result && result.name && (
+                        <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg space-y-3">
+                          {!showInventoryForm && !addedToInventory && (
+                            <Button
+                              onClick={() => setShowInventoryForm(true)}
+                              className="w-full bg-indigo-600 hover:bg-indigo-700"
+                              disabled={addPantryItem.isPending}
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add to Inventory
+                            </Button>
+                          )}
+
+                          {addedToInventory && (
+                            <div className="flex items-center gap-2 text-green-800">
+                              <Check className="w-5 h-5" />
+                              <p className="text-sm font-medium">Added to your pantry</p>
+                            </div>
+                          )}
+
+                          {showInventoryForm && !addedToInventory && (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2">
+                                <Package className="w-4 h-4 text-indigo-700" />
+                                <p className="text-sm font-semibold text-indigo-900">
+                                  Add "{result.name}" to pantry
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-xs text-indigo-800">Quantity</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    value={inventoryForm.quantity}
+                                    onChange={(e) =>
+                                      setInventoryForm({ ...inventoryForm, quantity: e.target.value })
+                                    }
+                                    className="w-full px-2 py-1.5 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-indigo-800">Unit</label>
+                                  <Select
+                                    value={inventoryForm.unit}
+                                    onValueChange={(v) =>
+                                      setInventoryForm({ ...inventoryForm, unit: v })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {["pc", "g", "kg", "ml", "L", "cup", "tbsp", "tsp"].map(
+                                        (u) => (
+                                          <SelectItem key={u} value={u}>
+                                            {u}
+                                          </SelectItem>
+                                        )
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-indigo-800">Category</label>
+                                  <Select
+                                    value={inventoryForm.category}
+                                    onValueChange={(v) =>
+                                      setInventoryForm({ ...inventoryForm, category: v })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 text-sm">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {[
+                                        "Grains",
+                                        "Legumes",
+                                        "Flour",
+                                        "Vegetables",
+                                        "Spices",
+                                        "Dairy",
+                                        "Other",
+                                      ].map((c) => (
+                                        <SelectItem key={c} value={c}>
+                                          {c}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-indigo-800">Expiry (optional)</label>
+                                  <input
+                                    type="date"
+                                    value={inventoryForm.expiryDate}
+                                    onChange={(e) =>
+                                      setInventoryForm({
+                                        ...inventoryForm,
+                                        expiryDate: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2 py-1.5 border border-indigo-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  onClick={handleAddToInventory}
+                                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                                  disabled={addPantryItem.isPending}
+                                >
+                                  {addPantryItem.isPending ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                      Adding...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="w-4 h-4 mr-2" />
+                                      Confirm
+                                    </>
+                                  )}
+                                </Button>
+                                <Button
+                                  onClick={() => setShowInventoryForm(false)}
+                                  variant="outline"
+                                  disabled={addPantryItem.isPending}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
