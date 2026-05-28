@@ -1,9 +1,5 @@
-<<<<<<< Updated upstream
-import { LayoutDashboard, ScanBarcode, ChefHat, Mic, Package, Users, LogOut, MessageSquare, Lock, LogIn } from "lucide-react";
+import { LayoutDashboard, ScanBarcode, ChefHat, Package, Users, LogOut, MessageSquare, Lock, LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-=======
-import { LayoutDashboard, ScanBarcode, ChefHat, Package, Users, LogOut, MessageSquare } from "lucide-react";
->>>>>>> Stashed changes
 import { Section } from "@/pages/Index";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
