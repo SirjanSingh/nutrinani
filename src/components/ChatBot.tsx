@@ -313,7 +313,7 @@ export function ChatBot() {
               ))}
             </div>
 
-            <ScrollArea className="h-[52vh] rounded-lg border bg-background">
+            <ScrollArea className="h-[45vh] lg:h-[48vh] rounded-lg border bg-background">
               <div className="p-4 space-y-3">
                 {messages.map((m) => (
                   <div
@@ -368,7 +368,7 @@ export function ChatBot() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Type your message… (Enter to send, Shift+Enter for new line)"
-                className="min-h-[90px]"
+                className="min-h-[60px] resize-none"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
