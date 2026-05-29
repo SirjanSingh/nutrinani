@@ -54,7 +54,13 @@ const Index = () => {
       return;
     }
     if (section === "recipes") {
-      setRecipeQuery(typeof payload === "string" ? payload : "");
+      let query = "";
+      if (typeof payload === "string") {
+        query = payload;
+      } else if (payload && typeof payload === "object" && typeof payload.recipeQuery === "string") {
+        query = payload.recipeQuery;
+      }
+      setRecipeQuery(query);
     }
     setActiveSection(section);
   };
@@ -79,7 +85,7 @@ const Index = () => {
           {activeSection === "recipes" && <Recipes initialQuery={recipeQuery} />}
           {activeSection === "inventory" && (
             <Inventory
-              onNavigateToRecipes={() => setActiveSection("recipes")}
+              onNavigateToRecipes={(query?: string) => handleSectionChange("recipes", query ? { recipeQuery: query } : undefined)}
             />
           )}
           {activeSection === "community" && <Community />}

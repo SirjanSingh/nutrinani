@@ -8,11 +8,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { usePantryItems, useAddPantryItem, useUpdatePantryItem, useDeletePantryItem } from "@/hooks/useApi";
 import type { PantryItem } from "@/types";
 
 interface InventoryProps {
-  onNavigateToRecipes?: () => void;
+  onNavigateToRecipes?: (query?: string) => void;
 }
 
 export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
@@ -26,6 +27,7 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
   const [showExpiringOnly, setShowExpiringOnly] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<PantryItem | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
 
   const [newItem, setNewItem] = useState({
     name: "",
@@ -85,6 +87,30 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
 
   const handleDeleteItem = (id: string) => {
     deleteItem.mutate(id);
+  };
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedItemIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedItemIds(next);
+  };
+
+  const handleCookUsingPantry = () => {
+    if (!onNavigateToRecipes) return;
+    
+    // If user selected specific items, only pass those. Otherwise pass all available items.
+    let itemsToPass: string[] = [];
+    if (selectedItemIds.size > 0 && itemsArray) {
+      itemsToPass = itemsArray.filter(i => selectedItemIds.has(i.id)).map(i => i.name);
+    } else if (itemsArray && itemsArray.length > 0) {
+      itemsToPass = itemsArray.map(i => i.name);
+    }
+    
+    onNavigateToRecipes(itemsToPass.join(", "));
   };
 
   return (
@@ -238,15 +264,20 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center justify-between p-4 rounded-xl border transition-all hover:shadow-md ${
+                        className={`flex items-center gap-4 p-4 rounded-xl border transition-all hover:shadow-md ${
                           expired ? "bg-destructive/10 border-destructive/30" : 
                           expiring ? "bg-warning/10 border-warning/30" : 
                           "bg-card border-border"
                         }`}
                       >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <h4 className="font-semibold text-foreground">{item.name}</h4>
+                        <Checkbox 
+                          checked={selectedItemIds.has(item.id)}
+                          onCheckedChange={() => toggleSelect(item.id)}
+                          className="mt-1 self-start md:self-center"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 md:gap-3">
+                            <h4 className="font-semibold text-foreground truncate">{item.name}</h4>
                             {item.category && (
                               <Badge variant="secondary" className="text-xs">{item.category}</Badge>
                             )}
@@ -388,10 +419,10 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
               <Button 
                 className="w-full gap-2" 
                 variant="outline"
-                onClick={onNavigateToRecipes}
+                onClick={handleCookUsingPantry}
               >
                 <ChefHat className="w-4 h-4" />
-                Cook Using Pantry
+                Cook Using Pantry {selectedItemIds.size > 0 ? `(${selectedItemIds.size})` : ""}
               </Button>
               {expiringItems.length > 0 && (
                 <Button className="w-full gap-2" variant="secondary">
