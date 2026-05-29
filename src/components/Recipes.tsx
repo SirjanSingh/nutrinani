@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,10 +15,16 @@ import { generateRecipe } from "@/services/recipeApi";
 import { useProfile } from "@/contexts/ProfileContext";
 import { Loader2, ChefHat, Clock, Users, BookOpen, ImageIcon, ArrowRight, ArrowDown } from "lucide-react";
 
-export default function Recipes() {
+export default function Recipes({ initialQuery }: { initialQuery?: string }) {
   const { profile } = useProfile();
 
-  const [baseIngredient, setBaseIngredient] = useState("");
+  const [baseIngredient, setBaseIngredient] = useState(initialQuery || "");
+
+  useEffect(() => {
+    if (initialQuery) {
+      setBaseIngredient(initialQuery);
+    }
+  }, [initialQuery]);
   const [mealType, setMealType] = useState("lunch");
   const [recipe, setRecipe] = useState<any>(null);
   const [loading, setLoading] = useState(false);

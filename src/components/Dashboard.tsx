@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 
 interface DashboardProps {
-  onNavigateToSection?: (section: string) => void;
+  onNavigateToSection?: (section: string, payload?: any) => void;
 }
 
 /* ---------- Helpers ---------- */
@@ -216,7 +216,7 @@ function useStreak(enabled: boolean) {
 
 /* ---------- Card Stack: Meal Ideas ---------- */
 
-function MealIdeasStack({ ideas, onSeeMore }: { ideas: MealIdea[]; onSeeMore: () => void }) {
+function MealIdeasStack({ ideas, onSeeMore }: { ideas: MealIdea[]; onSeeMore: (recipeName?: string) => void }) {
   const [idx, setIdx] = useState(0);
   const [outgoing, setOutgoing] = useState(false);
   const [direction, setDirection] = useState<'left' | 'right'>('left');
@@ -288,7 +288,7 @@ function MealIdeasStack({ ideas, onSeeMore }: { ideas: MealIdea[]; onSeeMore: ()
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onSeeMore(); }}
+                    onClick={(e) => { e.stopPropagation(); onSeeMore(idea.title); }}
                     className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 inline-flex items-center gap-1 bg-white/60 px-2 py-1 rounded-md"
                   >
                     Cook this <ArrowRight className="h-3 w-3" />
@@ -805,7 +805,7 @@ export default function Dashboard({ onNavigateToSection }: DashboardProps) {
           </div>
           <MealIdeasStack
             ideas={mealIdeas}
-            onSeeMore={() => onNavigateToSection?.('recipes')}
+            onSeeMore={(recipeName) => onNavigateToSection?.('recipes', recipeName)}
           />
         </div>
       </section>

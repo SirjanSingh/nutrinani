@@ -28,6 +28,7 @@ const Index = () => {
   const { isAuthed, isAuthLoading } = useAuth();
   const { activeProfile, isProfileLoading } = useProfile();
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
+  const [recipeQuery, setRecipeQuery] = useState<string>("");
 
   useEffect(() => {
     if (!isAuthLoading && isAuthed && !isProfileLoading && !activeProfile) {
@@ -47,10 +48,13 @@ const Index = () => {
     setActiveSection("dashboard");
   };
 
-  const handleSectionChange = (section: Section) => {
+  const handleSectionChange = (section: Section, payload?: any) => {
     if (!isAuthed && section !== "dashboard") {
       navigate("/login");
       return;
+    }
+    if (section === "recipes") {
+      setRecipeQuery(typeof payload === "string" ? payload : "");
     }
     setActiveSection(section);
   };
@@ -72,7 +76,7 @@ const Index = () => {
           {activeSection === "dashboard" && <Dashboard onNavigateToSection={handleSectionChange} />}
           {activeSection === "editProfile" && <EditProfile onBack={handleBackToDashboard} />}
           {activeSection === "scanner" && <Scanner />}
-          {activeSection === "recipes" && <Recipes />}
+          {activeSection === "recipes" && <Recipes initialQuery={recipeQuery} />}
           {activeSection === "inventory" && (
             <Inventory
               onNavigateToRecipes={() => setActiveSection("recipes")}
