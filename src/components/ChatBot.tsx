@@ -299,12 +299,13 @@ export function ChatBot() {
             <CardTitle className="text-base">Chat</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {QUICK_PROMPTS.map((p) => (
                 <Button
                   key={p}
                   variant="outline"
                   size="sm"
+                  className="h-auto py-2 px-3 text-xs text-left justify-start items-start whitespace-normal"
                   disabled={isSending}
                   onClick={() => sendMessage(p)}
                 >
