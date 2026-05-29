@@ -99,18 +99,30 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
     setSelectedItemIds(next);
   };
 
-  const handleCookUsingPantry = () => {
-    if (!onNavigateToRecipes) return;
-    
-    // If user selected specific items, only pass those. Otherwise pass all available items.
-    let itemsToPass: string[] = [];
-    if (selectedItemIds.size > 0 && itemsArray) {
-      itemsToPass = itemsArray.filter(i => selectedItemIds.has(i.id)).map(i => i.name);
-    } else if (itemsArray && itemsArray.length > 0) {
-      itemsToPass = itemsArray.map(i => i.name);
+  const [isCookDialogOpen, setIsCookDialogOpen] = useState(false);
+  const [cookSelectedIds, setCookSelectedIds] = useState<Set<string>>(new Set());
+
+  const openCookDialog = () => {
+    if (selectedItemIds.size > 0) {
+      setCookSelectedIds(new Set(selectedItemIds));
+    } else {
+      setCookSelectedIds(new Set(itemsArray.map(i => i.id)));
     }
-    
+    setIsCookDialogOpen(true);
+  };
+
+  const handleConfirmCook = () => {
+    if (!onNavigateToRecipes) return;
+    const itemsToPass = itemsArray.filter(i => cookSelectedIds.has(i.id)).map(i => i.name);
     onNavigateToRecipes(itemsToPass.join(", "));
+    setIsCookDialogOpen(false);
+  };
+
+  const toggleCookSelect = (id: string) => {
+    const next = new Set(cookSelectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setCookSelectedIds(next);
   };
 
   return (
@@ -419,18 +431,52 @@ export const Inventory = ({ onNavigateToRecipes }: InventoryProps) => {
               <Button 
                 className="w-full gap-2" 
                 variant="outline"
-                onClick={handleCookUsingPantry}
+                onClick={openCookDialog}
               >
                 <ChefHat className="w-4 h-4" />
                 Cook Using Pantry {selectedItemIds.size > 0 ? `(${selectedItemIds.size})` : ""}
               </Button>
               {expiringItems.length > 0 && (
-                <Button className="w-full gap-2" variant="secondary">
+                <Button className="w-full gap-2" variant="secondary" onClick={() => onNavigateToRecipes?.(expiringItems.map(i => i.name).join(", "))}>
                   <AlertTriangle className="w-4 h-4" />
                   Rescue Recipes
                   <Badge variant="outline" className="ml-auto">{expiringItems.length}</Badge>
                 </Button>
               )}
+
+              <Dialog open={isCookDialogOpen} onOpenChange={setIsCookDialogOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Select Ingredients to Cook</DialogTitle>
+                  </DialogHeader>
+                  <div className="max-h-[300px] overflow-y-auto space-y-2 py-4">
+                    {itemsArray.map((item) => (
+                      <div key={item.id} className="flex items-center space-x-2 p-2 border rounded-md hover:bg-gray-50">
+                        <Checkbox 
+                          id={`cook-${item.id}`}
+                          checked={cookSelectedIds.has(item.id)}
+                          onCheckedChange={() => toggleCookSelect(item.id)}
+                        />
+                        <label
+                          htmlFor={`cook-${item.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex-1 cursor-pointer"
+                        >
+                          {item.name} {item.quantity ? `(${item.quantity}${item.unit})` : ""}
+                        </label>
+                      </div>
+                    ))}
+                    {itemsArray.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center">Your pantry is empty.</p>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCookDialogOpen(false)}>Cancel</Button>
+                    <Button onClick={handleConfirmCook} disabled={cookSelectedIds.size === 0}>
+                      Generate Recipe
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardContent>
           </Card>
 

@@ -321,7 +321,7 @@ function MealIdeasStack({ ideas, onSeeMore }: { ideas: MealIdea[]; onSeeMore: (r
 
 /* ---------- Inventory Snapshot ---------- */
 
-function InventorySnapshot({ onNavigate }: { onNavigate?: (s: string) => void }) {
+function InventorySnapshot({ onNavigate }: { onNavigate?: (s: string, payload?: any) => void }) {
   const { data: pantryItems, isLoading } = usePantryItems();
   const items = Array.isArray(pantryItems) ? pantryItems : [];
 
@@ -386,7 +386,10 @@ function InventorySnapshot({ onNavigate }: { onNavigate?: (s: string) => void })
 
         <div className="flex gap-2 md:flex-shrink-0">
           {expiring.length > 0 && (
-            <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => onNavigate?.('recipes')}>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => {
+              const expiringNames = expiring.map(e => e.item.name).join(", ");
+              onNavigate?.('recipes', expiringNames);
+            }}>
               <ChefHat className="mr-1.5 h-3.5 w-3.5" />
               Rescue
             </Button>

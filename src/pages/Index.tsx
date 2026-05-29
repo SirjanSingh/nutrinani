@@ -74,7 +74,7 @@ const Index = () => {
 
       <main className="flex-1 overflow-auto relative">
         {/* Floating Profile / Sign-in */}
-        <div className="absolute top-4 right-6 md:right-8 lg:right-12 z-50">
+        <div className="absolute top-2 right-6 md:right-8 lg:right-12 z-50">
           <ProfileHeader />
         </div>
 
