@@ -233,7 +233,9 @@ export function useCommunityFeed() {
         await delay(500);
         return mockCommunityPosts;
       }
-      return mockCommunityPosts;
+      const res = await fetch(`${import.meta.env.VITE_COMMUNITY_API_URL}/posts`);
+      if (!res.ok) throw new Error("Failed to fetch community posts");
+      return res.json() as Promise<CommunityPost[]>;
     },
   });
 }
@@ -262,7 +264,14 @@ export function useCreatePost() {
         };
         return newPost;
       }
-      return {} as CommunityPost;
+      
+      const res = await fetch(`${import.meta.env.VITE_COMMUNITY_API_URL}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(post)
+      });
+      if (!res.ok) throw new Error("Failed to create post");
+      return res.json() as Promise<CommunityPost>;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["communityFeed"] });
@@ -283,7 +292,11 @@ export function useLikePost() {
         await delay(200);
         return { postId, liked: true };
       }
-      return { postId, liked: true };
+      const res = await fetch(`${import.meta.env.VITE_COMMUNITY_API_URL}/posts/${encodeURIComponent(postId)}/like`, {
+        method: "POST"
+      });
+      if (!res.ok) throw new Error("Failed to like post");
+      return res.json() as Promise<{ postId: string; liked: boolean }>;
     },
     onMutate: async (postId) => {
       // Optimistic update
@@ -314,7 +327,9 @@ export function useComments(postId: string) {
         await delay(300);
         return mockComments[postId] || [];
       }
-      return [];
+      const res = await fetch(`${import.meta.env.VITE_COMMUNITY_API_URL}/posts/${encodeURIComponent(postId)}/comments`);
+      if (!res.ok) throw new Error("Failed to fetch comments");
+      return res.json() as Promise<Comment[]>;
     },
     enabled: !!postId,
   });
@@ -337,7 +352,13 @@ export function useAddComment() {
         };
         return newComment;
       }
-      return {} as Comment;
+      const res = await fetch(`${import.meta.env.VITE_COMMUNITY_API_URL}/posts/${encodeURIComponent(postId)}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+      });
+      if (!res.ok) throw new Error("Failed to add comment");
+      return res.json() as Promise<Comment>;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["comments", variables.postId] });

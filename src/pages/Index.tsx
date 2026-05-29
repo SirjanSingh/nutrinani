@@ -68,11 +68,11 @@ const Index = () => {
 
       <main className="flex-1 overflow-auto relative">
         {/* Floating Profile / Sign-in */}
-        <div className="absolute top-6 right-6 md:right-8 lg:right-12 z-50">
+        <div className="absolute top-4 right-6 md:right-8 lg:right-12 z-50">
           <ProfileHeader />
         </div>
 
-        <div className="container mx-auto px-6 md:px-8 lg:px-12 pt-8 md:pt-10 pb-10 md:pb-14 max-w-7xl animate-fade-in">
+        <div className="container mx-auto px-6 md:px-8 lg:px-12 pt-16 md:pt-20 pb-10 md:pb-14 max-w-7xl animate-fade-in">
           {activeSection === "dashboard" && <Dashboard onNavigateToSection={handleSectionChange} />}
           {activeSection === "editProfile" && <EditProfile onBack={handleBackToDashboard} />}
           {activeSection === "scanner" && <Scanner />}
