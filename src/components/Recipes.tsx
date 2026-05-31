@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { generateRecipe } from "@/services/recipeApi";
 import { useProfile } from "@/contexts/ProfileContext";
-import { Loader2, ChefHat, Clock, Users, BookOpen, ImageIcon, ArrowRight, ArrowDown } from "lucide-react";
+import { Loader2, ChefHat, Clock, Users, BookOpen, ImageIcon, ArrowDown } from "lucide-react";
 
 export default function Recipes({ initialQuery }: { initialQuery?: string }) {
   const { profile } = useProfile();
@@ -55,8 +55,30 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
       });
 
       setRecipe(res);
+
+      // Fetch main image separately so it doesn't block recipe text
+      const apiBase = import.meta.env.VITE_API_BASE_URL;
+      fetch(`${apiBase}/generate-recipe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "main-image",
+          recipeName: res.recipeName,
+          imagePrompt: res.imagePrompt,
+        }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.image) {
+            setRecipe((prev: any) => ({ ...prev, imageUrl: data.image }));
+          }
+        })
+        .catch(() => {/* image fails silently, fallback handles it */})
+        .finally(() => setImageLoading(false));
+
     } catch (e: any) {
       console.error("Recipe generation error:", e);
+      setImageLoading(false);
       alert(e.message || "Failed to generate recipe. Please try again.");
     } finally {
       setLoading(false);
@@ -64,40 +86,58 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
   };
 
   const generateCollage = async () => {
-    if (!recipe || !recipe.steps) return;
+    if (!recipe?.steps) return;
 
     setCollageLoading(true);
+    const apiBase = import.meta.env.VITE_API_BASE_URL;
 
-    // Seed with empty slots so the UI renders placeholders immediately
+    // Pre-fill with empty strings so cards render immediately as placeholders
     const images: string[] = new Array(recipe.steps.length).fill("");
     setStepImages([...images]);
 
-    const apiBase = import.meta.env.VITE_API_BASE_URL;
+    const fetchStep = async (i: number) => {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await fetch(`${apiBase}/generate-recipe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mode: "step-image",
+              recipeName: recipe.recipeName,
+              step: recipe.steps[i],
+              stepIndex: i,
+            }),
+          });
 
-    // Call Lambda once per step, update UI progressively as each arrives
-    for (let i = 0; i < recipe.steps.length; i++) {
-      try {
-        const res = await fetch(`${apiBase}/generate-recipe`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "step-image",
-            recipeName: recipe.recipeName,
-            step: recipe.steps[i],
-            stepIndex: i,
-          }),
-        });
+          // Transient throttle/cold-start — retry
+          if ([502, 503, 504].includes(res.status) && attempt < 3) {
+            await new Promise(r => setTimeout(r, 1200 * attempt));
+            continue;
+          }
 
-        const data = await res.json();
-        if (res.ok && data.image) {
-          images[i] = data.image;
-          setStepImages([...images]); // progressive update
-        } else {
-          console.warn(`Step ${i + 1} image failed:`, data.error);
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.image) {
+            setStepImages(prev => {
+              const next = [...prev];
+              next[i] = data.image;
+              return next;
+            });
+          }
+          return;
+        } catch {
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1200 * attempt));
         }
-      } catch (err) {
-        console.warn(`Step ${i + 1} fetch error:`, err);
       }
+    };
+
+    // Account concurrency is tiny — go sequential (batch of 1) to avoid 503s
+    const BATCH_SIZE = 1;
+    for (let b = 0; b < recipe.steps.length; b += BATCH_SIZE) {
+      const batch = Array.from(
+        { length: Math.min(BATCH_SIZE, recipe.steps.length - b) },
+        (_, j) => fetchStep(b + j)
+      );
+      await Promise.allSettled(batch);
     }
 
     setCollageLoading(false);
@@ -350,17 +390,7 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
                     <p className="text-sm text-gray-600 mb-4">
                       Generate step-by-step images
                     </p>
-                    
-                    {collageLoading && (
-                      <div className="mb-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-orange-600 mx-auto mb-2" />
-                        <p className="text-xs text-orange-700 font-medium">
-                          Generating images...
-                        </p>
-                      </div>
-                    )}
-
-                    <Button 
+                    <Button
                       onClick={generateCollage}
                       disabled={collageLoading}
                       className="w-full gap-2"
@@ -381,20 +411,26 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Vertical flow with down arrows */}
                     <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
                       {stepImages.map((img, i) => (
                         <div key={i} className="flex flex-col items-center gap-3">
                           <Card className="overflow-hidden shadow-md w-full hover:shadow-lg transition-shadow">
                             <div className="relative">
-                              <img
-                                src={img || `https://placehold.co/400x400/f3f4f6/9ca3af?text=Step+${i + 1}`}
-                                alt={`Step ${i + 1}`}
-                                className="w-full aspect-square object-cover"
-                                onError={(e) => {
-                                  e.currentTarget.src = `https://placehold.co/400x400/f3f4f6/9ca3af?text=Step+${i + 1}`;
-                                }}
-                              />
+                              {img ? (
+                                <img
+                                  src={img}
+                                  alt={`Step ${i + 1}`}
+                                  className="w-full aspect-square object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.src = `https://placehold.co/400x400/f3f4f6/9ca3af?text=Step+${i + 1}`;
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-full aspect-square bg-gradient-to-br from-orange-100 to-amber-50 flex flex-col items-center justify-center gap-2">
+                                  <Loader2 className="h-8 w-8 animate-spin text-orange-400" />
+                                  <span className="text-xs text-orange-600 font-medium">Generating...</span>
+                                </div>
+                              )}
                               <div className="absolute top-2 left-2 w-8 h-8 rounded-full bg-orange-600 text-white flex items-center justify-center font-bold text-sm shadow-lg">
                                 {i + 1}
                               </div>
@@ -405,7 +441,7 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
                               </p>
                             </div>
                           </Card>
-                          
+
                           {i < stepImages.length - 1 && (
                             <ArrowDown className="h-6 w-6 text-orange-500" />
                           )}
@@ -413,7 +449,7 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
                       ))}
                     </div>
 
-                    <Button 
+                    <Button
                       onClick={generateCollage}
                       variant="outline"
                       className="w-full"
@@ -425,9 +461,7 @@ export default function Recipes({ initialQuery }: { initialQuery?: string }) {
                           Regenerating...
                         </>
                       ) : (
-                        <>
-                          🔄 Regenerate
-                        </>
+                        <>🔄 Regenerate</>
                       )}
                     </Button>
                   </div>
