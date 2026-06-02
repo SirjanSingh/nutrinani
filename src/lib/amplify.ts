@@ -30,7 +30,12 @@ export function configureAmplify() {
     config.Auth.Cognito.loginWith = {
       oauth: {
         domain: cognitoDomain,
-        scopes: ['openid', 'email', 'profile'],
+        // NOTE: the Cognito app client only has 'openid' and 'email' enabled as
+        // allowed OAuth scopes. Requesting 'profile' caused Google sign-in to fail
+        // with error=invalid_scope. The user's name still arrives via the Google
+        // identity-provider attribute mapping in the ID token. If you later enable
+        // the 'profile' scope on the app client, you can add it back here.
+        scopes: ['openid', 'email'],
         redirectSignIn: [redirectSignIn],
         redirectSignOut: [redirectSignOut],
         responseType: 'code',
