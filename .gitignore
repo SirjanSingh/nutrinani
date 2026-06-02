@@ -27,6 +27,15 @@ dist-ssr
 .env
 env
 *.zip
+
+# Vertex/WIF credential configs (bundled into Lambda zips at build time)
+**/gcp-wif-config.json
+# Local deploy scratch files
+**/_cur_env.json
+**/_env_payload.json
+**/_old_env_backup.json
+**/_ev.json
+**/_r.json
 1git.zip
 ACTION_REQUIRED.md
 COGNITO_SETUP.md

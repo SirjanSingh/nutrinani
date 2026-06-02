@@ -1,0 +1,13 @@
+{
+  "name": "nutrinani-community-handler",
+  "version": "1.0.0",
+  "description": "NutriNani community posts Lambda (Gemini on Vertex AI via WIF)",
+  "main": "index.js",
+  "dependencies": {
+    "google-auth-library": "^9.14.0"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0"
+  }
+}

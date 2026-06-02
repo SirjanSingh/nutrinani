@@ -1,0 +1,10 @@
+{
+  "name": "nutrinani-recipe-gen",
+  "version": "1.0.0",
+  "description": "NutriNani /generate-recipe Lambda (Gemini text + Imagen images on Vertex AI via WIF)",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "google-auth-library": "^9.14.0"
+  }
+}
