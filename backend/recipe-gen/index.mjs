@@ -17,6 +17,10 @@ const GCP_PROJECT = process.env.GCP_PROJECT_ID;
 const GCP_LOCATION = process.env.GCP_REGION || "us-central1";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const IMAGEN_MODEL = process.env.IMAGEN_MODEL || "imagen-3.0-fast-generate-001";
+const IMAGE_NEGATIVE_PROMPT =
+  process.env.IMAGE_NEGATIVE_PROMPT ||
+  "text, words, letters, captions, watermark, logo, blurry, low quality, distorted, " +
+    "deformed hands, extra fingers, extra limbs, cartoon, illustration, cluttered";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -46,21 +50,26 @@ export const handler = async (event) => {
 
     const body = JSON.parse(event.body || "{}");
 
-    // ---------- Hero image ----------
+    // ---------- Hero image (the finished plated dish) ----------
     if (body.mode === "main-image") {
-      const image = await generateImage(
-        body.imagePrompt || `${body.recipeName || "dish"}, photorealistic food photography`
-      );
+      const subject = body.imagePrompt || `${body.recipeName || "a finished dish"}`;
+      const prompt =
+        `Appetizing food photography of the finished dish: ${subject}. ` +
+        `Beautifully plated and garnished on a clean plate, soft natural lighting, ` +
+        `shallow depth of field, 45-degree angle, clean background, photorealistic, magazine quality.`;
+      const image = await generateImage(prompt);
       return ok({ image });
     }
 
-    // ---------- Single cooking-step image ----------
+    // ---------- Single cooking-step image (an action in progress, NOT plated food) ----------
     if (body.mode === "step-image") {
       if (!body.step) return bad("step text required");
-      const image = await generateImage(
-        `${body.recipeName || "dish"} cooking step ${(body.stepIndex ?? 0) + 1}: ${body.step}. ` +
-          `Overhead kitchen scene, clean minimalist, natural lighting, realistic hands and utensils.`
-      );
+      const dish = body.recipeName || "the dish";
+      const prompt =
+        `Realistic instructional cooking photo showing this preparation step for ${dish}: ${body.step}. ` +
+        `Top-down view of the ingredients and cookware on a counter in a clean modern kitchen, ` +
+        `bright natural lighting, photographic, simple and uncluttered.`;
+      const image = await generateImage(prompt);
       return ok({ image });
     }
 
@@ -125,10 +134,11 @@ Rules for healthScores (0-100) — include only keys relevant to the user's cond
 
 Rules:
 - Ingredients ONLY in "ingredients"
-- Steps are actions only (no quantities inside steps)
+- "steps": between 4 and 7 steps. NEVER more than 7. Combine minor actions into one step; do not over-split.
+- Each step is ONE short, clear sentence describing a single cooking action (no quantities inside steps)
 - Use "to taste" for salt/pepper/spices, "as needed" for oil/butter/ghee
 - Be specific for main ingredients (e.g. "2 cups", "500g")
-- imagePrompt: vivid photorealistic food-photography description — colors, plating, garnish, lighting, angle
+- imagePrompt: one vivid sentence describing the finished plated dish — colors, plating, garnish, lighting, angle
 `;
 
   const data = await vertex(`${GEMINI_MODEL}:generateContent`, {
@@ -142,14 +152,14 @@ Rules:
 }
 
 // ---------- Imagen image generation -> data URL ----------
-async function generateImage(promptText) {
-  const enhanced =
-    `Professional food photography: ${promptText}. Beautifully plated, natural lighting, ` +
-    `shallow depth of field, 45-degree angle, appetizing, magazine quality.`;
-
+async function generateImage(prompt) {
   const data = await vertex(`${IMAGEN_MODEL}:predict`, {
-    instances: [{ prompt: enhanced }],
-    parameters: { sampleCount: 1, aspectRatio: "1:1" },
+    instances: [{ prompt }],
+    parameters: {
+      sampleCount: 1,
+      aspectRatio: "1:1",
+      negativePrompt: IMAGE_NEGATIVE_PROMPT,
+    },
   });
 
   const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
